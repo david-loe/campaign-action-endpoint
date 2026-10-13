@@ -1,0 +1,22 @@
+<details class="preview-controls" {% if recipient or preview_search %}open{% endif %}>
+  <summary>Personalisierte Vorschau</summary>
+  <div class="stack">
+    <form method="get" action="{{ url_for('web.campaign_preview', campaign_id=campaign.id) }}" class="preview-search">
+      {% if recipient %}<input type="hidden" name="recipient_id" value="{{ recipient.id }}">{% endif %}
+      <label>Empfänger suchen<input name="search" value="{{ preview_search }}" placeholder="Name, E-Mail oder Key" maxlength="255"></label>
+      <button type="submit" class="button secondary">Suchen</button>
+    </form>
+    <form method="get" action="{{ url_for('web.campaign_preview', campaign_id=campaign.id) }}" class="stack">
+      <input type="hidden" name="search" value="{{ preview_search }}">
+      <label for="preview-recipient">Empfänger für die Vorschau</label>
+      <select name="recipient_id" id="preview-recipient">
+        <option value="" {% if not recipient %}selected{% endif %}>Ohne Empfänger (Ersatzwerte)</option>
+        {% if preview_selected_separate %}<option value="{{ recipient.id }}" selected>{{ recipient.name ~ ' · ' if recipient.name else '' }}{{ recipient.identity }}</option>{% endif %}
+        {% for candidate in preview_recipients %}<option value="{{ candidate.id }}" {% if recipient and recipient.id == candidate.id %}selected{% endif %}>{{ candidate.name ~ ' · ' if candidate.name else '' }}{{ candidate.identity }}</option>{% endfor %}
+      </select>
+      {% if preview_more %}<p class="help">Die ersten 50 Treffer werden angezeigt. Verfeinern Sie die Suche, um weitere Empfänger zu finden.</p>{% elif not preview_recipients %}<p class="help">{{ 'Keine passenden Empfänger gefunden.' if preview_search else 'Noch keine Empfänger vorhanden.' }}</p>{% endif %}
+      <div><button type="submit" class="button secondary">Vorschau anzeigen</button></div>
+    </form>
+    {% if not recipient %}<p class="help">Ohne Empfänger-Auswahl werden fehlende Werte durch Ersatztexte oder leere Stellen ersetzt.</p>{% endif %}
+  </div>
+</details>

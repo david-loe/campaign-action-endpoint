@@ -108,7 +108,7 @@ def test_migrations_are_idempotent_and_preserve_data(app, factory):
     with sqlite3.connect(app.config["DATABASE_PATH"]) as target:
         assert target.execute("SELECT confirmed_at FROM recipient").fetchone()[0]
         assert target.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-        assert target.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0004"
+        assert target.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
 
 
 @pytest.mark.parametrize("change", [

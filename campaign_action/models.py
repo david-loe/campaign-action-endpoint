@@ -5,6 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
 
 db = SQLAlchemy()
+DEFAULT_CONFIRMATION_HEADING = "Bestätigung erfolgreich"
 
 
 def utcnow():
@@ -22,6 +23,7 @@ class Campaign(db.Model):
     identity_type = db.Column(db.String(10), nullable=False, default="email")
     key_column = db.Column(db.String(200), nullable=False, default="key")
     confirmation_mode = db.Column(db.String(10), nullable=False, default="action")
+    confirmation_heading = db.Column(db.String(200), nullable=False, default=DEFAULT_CONFIRMATION_HEADING)
     confirmation_text = db.Column(db.Text, nullable=False, default="Vielen Dank für Ihre Bestätigung.")
     form_enabled = db.Column(db.Boolean, nullable=False, default=False)
     show_text_with_form = db.Column(db.Boolean, nullable=False, default=False)

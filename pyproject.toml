@@ -9,6 +9,7 @@ description = "Self-hosted campaign confirmations and forms"
 requires-python = ">=3.13"
 dependencies = [
   "Flask>=3.1,<4",
+  "Jinja2>=3.1,<4",
   "Flask-SQLAlchemy>=3.1,<4",
   "Flask-WTF>=1.2,<2",
   "SQLAlchemy>=2.0,<3",
@@ -19,6 +20,8 @@ dependencies = [
   "httpx>=0.28,<1",
   "python-dotenv>=1.0,<2",
   "Pillow>=11,<13",
+  "defusedxml>=0.7,<1",
+  "tinycss2>=1.4,<2",
 ]
 
 [project.optional-dependencies]

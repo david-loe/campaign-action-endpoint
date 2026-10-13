@@ -5,6 +5,7 @@ import re
 from PIL import Image, UnidentifiedImageError
 
 from .models import BrandingConfig, db
+from .svg_logo import sanitize_svg
 
 DEFAULT_ACCENT = "#2359dc"
 MAX_LOGO_BYTES = 2 * 1024 * 1024
@@ -33,8 +34,8 @@ def read_logo(upload):
             image.verify()
         with Image.open(io.BytesIO(data), formats=list(LOGO_TYPES)) as image:
             image.load()
-    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as exc:
-        raise ValueError("Bitte laden Sie ein gültiges PNG-, JPEG- oder WebP-Logo hoch.") from exc
+    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError):
+        return sanitize_svg(data), "image/svg+xml"
     return data, mime
 
 
@@ -78,6 +79,13 @@ def branding_css(color):
     readable = rgb
     while 1.05 / (luminance(readable) + .05) < 4.5:
         readable = tuple(int(value * .9) for value in readable)
+    dark_readable = rgb
+    # Use the lightest dark surface used by public links (the preview notice).
+    dark_surface_luminance = luminance((25, 44, 71))
+    while ((max(luminance(dark_readable), dark_surface_luminance) + .05)
+           / (min(luminance(dark_readable), dark_surface_luminance) + .05)) < 4.5:
+        dark_readable = tuple(min(255, value + max(1, round((255 - value) * .1))) for value in dark_readable)
     hex_color = lambda values: "#" + "".join(f"{value:02x}" for value in values)
     return (f".public-page{{--blue:{color};--blue-dark:{hex_color(hover)};"
-            f"--accent-text:{foreground};--accent-readable:{hex_color(readable)};}}")
+            f"--accent-text:{foreground};--accent-readable:{hex_color(readable)};}}"
+            f"@media(prefers-color-scheme:dark){{.public-page{{--accent-readable:{hex_color(dark_readable)};}}}}")

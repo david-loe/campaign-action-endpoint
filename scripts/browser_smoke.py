@@ -27,6 +27,8 @@ def main():
     parser.add_argument("--screenshots", type=Path, help="Optional screenshot directory")
     parser.add_argument("--confirmation-mode", choices=("action", "visit"), default="action")
     parser.add_argument("--hide-text-with-form", action="store_true")
+    parser.add_argument("--color-scheme", choices=("light", "dark"), default="light")
+    parser.add_argument("--logo-format", choices=("png", "svg"), default="png")
     args = parser.parse_args()
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=True)
@@ -44,12 +46,16 @@ def main():
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
-                context = browser.new_context(viewport={"width": 1440, "height": 1050})
+                context = browser.new_context(viewport={"width": 1440, "height": 1050}, color_scheme=args.color_scheme)
                 page = context.new_page()
                 page.set_default_timeout(10000)
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(origin + "/admin/login")
+                for scheme, expected in (("dark", "rgb(13, 20, 32)"), ("light", "rgb(245, 247, 251)")):
+                    page.emulate_media(color_scheme=scheme)
+                    assert page.evaluate("getComputedStyle(document.documentElement).backgroundColor") == expected
+                page.emulate_media(color_scheme=args.color_scheme)
                 page.get_by_label("Benutzername").fill("admin")
                 page.get_by_label("Passwort").fill(password)
                 page.get_by_role("button", name="Anmelden", exact=True).click()
@@ -59,8 +65,10 @@ def main():
                 Image.new("RGB", (160, 48), color="#4b267d").save(logo, format="PNG")
                 page.get_by_label("Akzentfarbe (Hex)").fill("#4b267d")
                 assert page.get_by_label("Akzentfarbe auswählen", exact=True).input_value() == "#4b267d"
-                page.get_by_label("Logo hochladen").set_input_files({"name": "logo.png", "mimeType": "image/png",
-                                                                               "buffer": logo.getvalue()})
+                logo_data = (b'<svg xmlns="http://www.w3.org/2000/svg" width="160" height="48" viewBox="0 0 160 48"><style>.brand{fill:#4b267d}</style><rect class="brand" width="160" height="48"/></svg>'
+                             if args.logo_format == "svg" else logo.getvalue())
+                page.get_by_label("Logo hochladen").set_input_files({"name": "logo." + args.logo_format,
+                    "mimeType": "image/svg+xml" if args.logo_format == "svg" else "image/png", "buffer": logo_data})
                 page.get_by_role("button", name="Branding speichern", exact=True).click()
                 assert page.locator(".branding-logo-preview").evaluate("image => image.complete && image.naturalWidth === 160")
                 page.get_by_role("link", name="Campaigns", exact=True).click()
@@ -70,7 +78,8 @@ def main():
                 page.get_by_label("Formular aktivieren", exact=True).check()
                 if not args.hide_text_with_form:
                     page.get_by_label("Bestätigungstext bereits über dem offenen Formular anzeigen").check()
-                page.locator('textarea[name="confirmation_text"]').fill("Vielen Dank für Ihre Teilnahme!")
+                page.locator('input[name="confirmation_heading"]').fill("Teilnahme erfolgreich")
+                page.locator('textarea[name="confirmation_text"]').fill('Vielen Dank, {{ name | default("Teilnehmer") }}! {{ attributes.firma | default("Ihre Organisation") }} · {{ source.kundennummer | default("keine Nummer") }}')
                 for label, kind, required in [("Ihr Name", "text", "1"), ("Kontakt-E-Mail", "email", "1"),
                                                ("Anzahl Gäste", "number", "0"), ("Wunschtermin", "date", "0")]:
                     page.locator("#add-field").click()
@@ -85,7 +94,7 @@ def main():
                 campaign_url = page.url
                 page.get_by_role("link", name="CSV importieren", exact=True).click()
                 page.locator('input[name="file"]').set_input_files({"name": "subscribers.csv", "mimeType": "text/csv",
-                    "buffer": b"email,name\nanna@example.com,Anna\nben@example.com,Ben\n"})
+                    "buffer": b'email,name,attributes,kundennummer\nanna@example.com,Anna,"{""firma"":""Acme""}",A-01\nben@example.com,Ben,"{""firma"":""Beta""}",B-02\n'})
                 page.get_by_role("button", name="Importvorschau anzeigen").click()
                 page.get_by_role("button", name="2 Empfänger importieren").click()
                 page.wait_for_url(campaign_url)
@@ -95,20 +104,23 @@ def main():
                 assert all(re.fullmatch(r"[A-Za-z0-9_-]{22}", row["link"].rsplit("/r/", 1)[1]) for row in rows)
                 if args.screenshots:
                     page.screenshot(path=str(args.screenshots / "admin.png"), full_page=True)
-                mobile = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+                mobile = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
+                                             color_scheme=args.color_scheme)
                 mobile.add_init_script("""window.cspViolations = [];
                     document.addEventListener('securitypolicyviolation', event => window.cspViolations.push(event.violatedDirective));""")
                 recipient = mobile.new_page()
                 recipient.on("pageerror", lambda error: errors.append(str(error)))
                 recipient.goto(rows[0]["link"])
+                assert recipient.evaluate("getComputedStyle(document.documentElement).backgroundColor") == ("rgb(13, 20, 32)" if args.color_scheme == "dark" else "rgb(245, 247, 251)")
+                assert recipient.locator(".public-card").evaluate("card => getComputedStyle(card).backgroundColor") == ("rgb(23, 34, 49)" if args.color_scheme == "dark" else "rgb(255, 255, 255)")
                 assert recipient.locator(".public-logo").evaluate("image => image.complete && image.naturalWidth === 160")
                 assert recipient.locator(".primary").evaluate("button => getComputedStyle(button).backgroundColor") == "rgb(75, 38, 125)"
                 assert recipient.get_by_text("Herbstkampagne 2026", exact=True).is_visible()
                 assert "Campaign Action" not in recipient.locator("body").inner_text()
                 assert "Ihre Rückmeldung" not in recipient.locator("body").inner_text()
-                assert recipient.get_by_text("Bestätigung erfolgreich", exact=True).count() == (1 if args.confirmation_mode == "visit" and not args.hide_text_with_form else 0)
+                assert recipient.get_by_text("Teilnahme erfolgreich", exact=True).count() == (1 if args.confirmation_mode == "visit" and not args.hide_text_with_form else 0)
                 assert recipient.evaluate("window.cspViolations.length === 0"), "Public page CSP violation"
-                assert recipient.get_by_text("Vielen Dank für Ihre Teilnahme!", exact=True).count() == (0 if args.hide_text_with_form else 1)
+                assert recipient.get_by_text("Vielen Dank, Anna! Acme · A-01", exact=True).count() == (0 if args.hide_text_with_form else 1)
                 assert recipient.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Mobile overflow"
                 if args.screenshots:
                     recipient.screenshot(path=str(args.screenshots / "public.png"), full_page=True)
@@ -118,8 +130,9 @@ def main():
                 recipient.get_by_label("Anzahl Gäste").fill("2")
                 recipient.get_by_role("button", name="Angaben absenden" if args.confirmation_mode == "visit" else "Jetzt bestätigen").click()
                 assert recipient.get_by_text("Ihre Angaben wurden gespeichert. Die Abgabe ist abgeschlossen.").is_visible()
-                assert recipient.get_by_text("Bestätigung erfolgreich", exact=True).is_visible()
-                assert recipient.locator(".completion-mark svg path").evaluate("path => getComputedStyle(path).stroke") == "rgb(21, 117, 82)"
+                assert recipient.get_by_text("Teilnahme erfolgreich", exact=True).is_visible()
+                assert recipient.get_by_text("Vielen Dank, Anna! Acme · A-01", exact=True).is_visible()
+                assert recipient.locator(".completion-mark svg path").evaluate("path => getComputedStyle(path).stroke") == ("rgb(103, 219, 166)" if args.color_scheme == "dark" else "rgb(21, 117, 82)")
                 if args.screenshots:
                     recipient.screenshot(path=str(args.screenshots / "public-confirmed.png"), full_page=True)
                 recipient.reload()
@@ -139,11 +152,19 @@ def main():
                 page.get_by_role("button", name="Campaign speichern", exact=True).click()
                 preview = context.new_page()
                 preview.goto(campaign_url + "/preview")
-                assert preview.get_by_text("Bestätigung erfolgreich", exact=True).count() == (1 if args.confirmation_mode == "visit" and not args.hide_text_with_form else 0)
+                assert preview.get_by_text("Teilnahme erfolgreich", exact=True).count() == (1 if args.confirmation_mode == "visit" and not args.hide_text_with_form else 0)
+                assert preview.get_by_text("Vielen Dank, Teilnehmer! Ihre Organisation · keine Nummer", exact=True).count() == (0 if args.hide_text_with_form else 1)
                 assert preview.locator(".public-logo").count() == 0
                 assert preview.title() == "Bestätigung"
                 assert preview.locator(".primary").evaluate("button => getComputedStyle(button).backgroundColor") == "rgb(255, 204, 0)"
                 assert preview.locator(".primary").evaluate("button => getComputedStyle(button).color") == "rgb(0, 0, 0)"
+                preview.get_by_text("Personalisierte Vorschau", exact=True).click()
+                preview.get_by_label("Empfänger suchen", exact=True).fill("Anna")
+                preview.get_by_role("button", name="Suchen", exact=True).click()
+                preview.get_by_label("Empfänger für die Vorschau", exact=True).select_option(label="Anna · anna@example.com")
+                preview.get_by_role("button", name="Vorschau anzeigen", exact=True).click()
+                assert preview.get_by_text("Vielen Dank, Anna! Acme · A-01", exact=True).count() == (0 if args.hide_text_with_form else 1)
+                assert preview.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Preview overflow"
                 if args.screenshots:
                     preview.screenshot(path=str(args.screenshots / "public-desktop-custom.png"), full_page=True)
                 preview.close()
@@ -189,7 +210,7 @@ def main():
                 assert mobile_admin.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Mobile admin overflow"
                 assert not errors, errors
                 browser.close()
-                print("Browser smoke passed: global/custom branding, logo upload, CSP, CSV/forms, mobile layout, Listmonk import and export.")
+                print("Browser smoke passed: personalized texts, configurable headings, recipient preview, branding, CSV/forms, mobile layout, Listmonk.")
         finally:
             server.shutdown()
             thread.join(timeout=5)

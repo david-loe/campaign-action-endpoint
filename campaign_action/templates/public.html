@@ -6,22 +6,22 @@
 {% block footer %}{% endblock %}
 {% block main_class %}container public-container{% endblock %}
 {% block content %}
-{% if preview %}<div class="notice">Vorschau – es wird keine Bestätigung oder Formularabgabe gespeichert. <a href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">Zurück zur Campaign</a></div>{% endif %}
+{% if preview %}<div class="notice">Vorschau – es wird keine Bestätigung oder Formularabgabe gespeichert. <a href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">Zurück zur Campaign</a>{% include 'preview_controls.html' %}</div>{% endif %}
 <section class="card public-card stack">
   {% if campaign.show_campaign_name %}<p class="eyebrow">{{ campaign.name }}</p>{% endif %}
   {% if confirmed and (complete or campaign.show_text_with_form) %}
     <div class="confirmation-result" role="status">
       <span class="completion-mark" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" focusable="false"><path d="M12 25l8 8 17-18" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <p class="confirmation-success">Bestätigung erfolgreich</p>
+      <p class="confirmation-success">{{ campaign.confirmation_heading }}</p>
       {% if complete %}<h1>Vielen Dank!</h1>{% endif %}
     </div>
   {% endif %}
   {% if complete %}
-    <p class="confirmation-text">{{ campaign.confirmation_text }}</p>
+    <p class="confirmation-text">{{ confirmation_text }}</p>
     {% if campaign.form_enabled %}<p class="muted">Ihre Angaben wurden gespeichert. Die Abgabe ist abgeschlossen.</p>{% else %}<p class="muted">{{ 'Ihre Bestätigung wird beim Linkaufruf gespeichert.' if preview else 'Ihre Bestätigung wurde gespeichert.' }}</p>{% endif %}
   {% else %}
     {% if campaign.form_enabled %}<h1 class="sr-only">Bestätigungsformular</h1>{% else %}<h1>Bitte bestätigen</h1>{% endif %}
-    {% if campaign.form_enabled and campaign.show_text_with_form %}<p class="confirmation-text">{{ campaign.confirmation_text }}</p>{% endif %}
+    {% if campaign.form_enabled and campaign.show_text_with_form %}<p class="confirmation-text">{{ confirmation_text }}</p>{% endif %}
     {% if campaign.form_enabled and campaign.confirmation_mode != 'visit' %}<p class="muted">Füllen Sie das Formular aus, um Ihre Bestätigung abzugeben.</p>{% elif not campaign.form_enabled %}<p class="muted">Klicken Sie auf den Button, um Ihre Bestätigung abzugeben.</p>{% endif %}
     {% if errors %}<div class="notice error" role="alert">Bitte prüfen Sie die markierten Felder.</div>{% endif %}
     <form method="post" {% if not preview %}action="{{ url_for('web.public_confirmation', token=token) }}"{% endif %} class="stack">
@@ -32,7 +32,7 @@
         <div class="input-group"><input id="{{ key }}" name="{{ key }}" type="{{ field.field_type }}" value="{{ values.get(key, '') }}" {% if field.field_type == 'number' %}step="any"{% endif %} {% if field.field_type == 'text' %}maxlength="10000"{% endif %} {% if field.required %}required{% endif %} {% if field.description or errors.get(key) %}aria-describedby="{{ key }}_help"{% endif %} {% if errors.get(key) %}aria-invalid="true"{% endif %}>
         {% if field.description or errors.get(key) %}<div id="{{ key }}_help">{% if field.description %}<p class="help preserve-lines">{{ field.description }}</p>{% endif %}{% if errors.get(key) %}<p class="field-error">{{ errors[key] }}</p>{% endif %}</div>{% endif %}</div>
         {% endfor %}
-        <p class="help">* Pflichtfeld. Nach dem Absenden können die Angaben nicht mehr geändert werden.</p>
+        <p class="help">{% if campaign.fields|selectattr('required')|list %}* Pflichtfeld. {% endif %}Nach dem Absenden können die Angaben nicht mehr geändert werden.</p>
       {% endif %}
       <button type="submit" class="button primary" {% if preview %}disabled{% endif %}>{{ 'Angaben absenden' if campaign.form_enabled and campaign.confirmation_mode == 'visit' else 'Jetzt bestätigen' }}</button>
     </form>

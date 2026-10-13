@@ -7,6 +7,14 @@ from campaign_action.models import Campaign, Recipient, Submission, db
 from conftest import csrf, settings_data
 
 
+@pytest.mark.parametrize("required", [False, True])
+def test_required_field_hint_is_only_shown_for_forms_with_required_fields(app, client, factory, required):
+    item = factory(form=True, fields=[("Name", "text", required), ("Weitere Angaben", "text", False)])
+    for page in (app.test_client().get(item["path"]), client.get(f'/admin/campaigns/{item["campaign_id"]}/preview')):
+        assert ("* Pflichtfeld." in page.text) == required
+        assert "Nach dem Absenden können die Angaben nicht mehr geändert werden." in page.text
+
+
 @pytest.mark.parametrize("mode", ["visit", "action"])
 @pytest.mark.parametrize("form", [False, True])
 def test_confirmation_modes(app, factory, mode, form):

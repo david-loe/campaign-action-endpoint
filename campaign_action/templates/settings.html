@@ -37,7 +37,16 @@
       <select {% if locked %}disabled{% else %}name="confirmation_mode"{% endif %}><option value="action" {% if values.confirmation_mode == 'action' %}selected{% endif %}>Bei Button-Klick / gültiger Formularabgabe</option><option value="visit" {% if values.confirmation_mode == 'visit' %}selected{% endif %}>Direkt beim Linkaufruf</option></select>
       <span class="help">Beim direkten Linkaufruf können auch automatische Abrufe durch E-Mail-Systeme eine Bestätigung auslösen.</span>
     </label>
-    <label>Bestätigungstext<textarea name="confirmation_text" rows="4" maxlength="10000" required>{{ values.confirmation_text }}</textarea><span class="help">Klartext; Zeilenumbrüche bleiben erhalten.</span></label>
+    <label>Bestätigungsüberschrift<input name="confirmation_heading" value="{{ values.confirmation_heading }}" maxlength="200" required><span class="help">Die Überschrift unter dem grünen Haken. Klartext ohne Platzhalter.</span></label>
+    <label>Bestätigungstext<textarea name="confirmation_text" rows="4" maxlength="10000" required>{{ values.confirmation_text }}</textarea><span class="help">Klartext mit Platzhaltern; Zeilenumbrüche bleiben erhalten.</span></label>
+    <details><summary>Platzhalter und Ersatzwerte</summary>
+      {% raw %}<p class="help">Verfügbar: <code>{{ name }}</code>, <code>{{ email }}</code>, <code>{{ identity }}</code>, Custom-Attribute über <code>{{ attributes.firma }}</code> und importierte CSV-Spalten über <code>{{ source.kundennummer }}</code>.</p>
+      <pre class="code-block">Vielen Dank, {{ name | default("Teilnehmer") }}!
+Ihre Organisation: {{ attributes.firma | default("Ihre Organisation") }}
+{{ attributes["firma-name"] }}
+{{ attributes.kontakte[0].name }}</pre>{% endraw %}
+      <p class="help">Fehlende, leere und null-Werte verwenden den Ersatztext oder bleiben leer. Bedingungen, Schleifen und andere Filter sind nicht erlaubt. In der gespeicherten Vorschau können Sie einen Empfänger auswählen.</p>
+    </details>
   </section>
   <section class="card stack"><h2>Formular</h2>
     {% if locked and values.form_enabled %}<input type="hidden" name="form_enabled" value="1">{% endif %}

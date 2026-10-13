@@ -7,11 +7,13 @@ from functools import wraps
 
 from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import func, or_, text
+from sqlalchemy.orm import load_only
 from werkzeug.security import check_password_hash
 
 from .branding import (DEFAULT_ACCENT, apply_logo, branding_css, effective_branding, global_branding,
                        public_branding, read_logo, validate_color)
-from .models import BrandingConfig, Campaign, FormField, ImportJob, LoginAttempt, ListmonkConfig, Recipient, Submission, TransferJob, db, utcnow
+from .confirmation_text import parse_confirmation_text, render_confirmation_text
+from .models import DEFAULT_CONFIRMATION_HEADING, BrandingConfig, Campaign, FormField, ImportJob, LoginAttempt, ListmonkConfig, Recipient, Submission, TransferJob, db, utcnow
 from .services import (FIELD_TYPES, LISTMONK_COLUMNS, annotate_import, begin_write, confirm,
                        confirmation_link, csv_bytes, iso_date, listmonk_values,
                        parse_csv, token_recipient, validate_answers)
@@ -116,6 +118,7 @@ def settings_values(campaign=None, form=None):
         fields = [dict(zip(("id", "label", "field_type", "required", "description"), row)) for row in zip(*columns)]
         return {"name": form.get("name", ""), "identity_type": form.get("identity_type", "email"),
                 "key_column": form.get("key_column", "key"), "confirmation_mode": form.get("confirmation_mode", "action"),
+                "confirmation_heading": form.get("confirmation_heading", campaign.confirmation_heading if campaign else DEFAULT_CONFIRMATION_HEADING),
                 "confirmation_text": form.get("confirmation_text", ""), "form_enabled": form.get("form_enabled") == "1",
                 "show_campaign_name": form.get("show_campaign_name") == "1",
                 "branding_mode": form.get("branding_mode", "global"),
@@ -123,11 +126,11 @@ def settings_values(campaign=None, form=None):
                 "show_text_with_form": form.get("show_text_with_form") == "1", "active": form.get("active") == "1", "fields": fields}
     if campaign:
         return {key: getattr(campaign, key) for key in ("name", "identity_type", "key_column", "confirmation_mode",
-                "confirmation_text", "form_enabled", "show_text_with_form", "active", "show_campaign_name", "branding_mode", "accent_color")} | {
+                "confirmation_heading", "confirmation_text", "form_enabled", "show_text_with_form", "active", "show_campaign_name", "branding_mode", "accent_color")} | {
                 "fields": [{"id": str(f.id), "label": f.label, "field_type": f.field_type,
                             "required": "1" if f.required else "0", "description": f.description} for f in campaign.fields]}
     return {"name": "", "identity_type": "email", "key_column": "key", "confirmation_mode": "action",
-            "confirmation_text": "Vielen Dank für Ihre Bestätigung.", "form_enabled": False,
+            "confirmation_heading": DEFAULT_CONFIRMATION_HEADING, "confirmation_text": "Vielen Dank für Ihre Bestätigung.", "form_enabled": False,
             "show_text_with_form": False, "active": True, "show_campaign_name": True,
             "branding_mode": "global", "accent_color": DEFAULT_ACCENT, "fields": []}
 
@@ -147,6 +150,9 @@ def apply_settings(campaign, values, form):
         raise ValueError("Ungültige Campaign-Einstellungen.")
     if not 1 <= len(values["confirmation_text"].strip()) <= 10000:
         raise ValueError("Der Bestätigungstext muss 1 bis 10.000 Zeichen enthalten.")
+    if not 1 <= len(values["confirmation_heading"].strip()) <= 200:
+        raise ValueError("Die Bestätigungsüberschrift muss 1 bis 200 Zeichen enthalten.")
+    parse_confirmation_text(values["confirmation_text"])
     if not 1 <= len(values["key_column"].strip()) <= 200:
         raise ValueError("Bitte geben Sie den Namen der Key-Spalte an.")
     columns = [form.getlist(key) for key in ("field_id", "field_label", "field_type", "field_required", "field_description")]
@@ -244,6 +250,7 @@ def campaign_duplicate(campaign_id):
     original = campaign_or_404(campaign_id)
     copy = Campaign(name=original.name[:190] + " (Kopie)", identity_type=original.identity_type, key_column=original.key_column,
                     confirmation_mode=original.confirmation_mode, confirmation_text=original.confirmation_text,
+                    confirmation_heading=original.confirmation_heading,
                     form_enabled=original.form_enabled, show_text_with_form=original.show_text_with_form, active=True,
                     show_campaign_name=original.show_campaign_name, branding_mode=original.branding_mode,
                     accent_color=original.accent_color, logo_data=original.logo_data, logo_mime=original.logo_mime)
@@ -424,10 +431,25 @@ def export_results(campaign_id):
 @admin_required
 def campaign_preview(campaign_id):
     campaign = campaign_or_404(campaign_id)
-    return render_template("public.html", campaign=campaign, recipient=None, token=None, preview=True,
+    recipient = None
+    if request.args.get("recipient_id", ""):
+        recipient_id = request.args.get("recipient_id", type=int)
+        recipient = db.session.scalar(db.select(Recipient).where(Recipient.id == recipient_id, Recipient.campaign_id == campaign.id))
+        if recipient is None:
+            abort(404)
+    search = request.args.get("search", "")[:255]
+    query = db.select(Recipient).where(Recipient.campaign_id == campaign.id)
+    if search:
+        query = query.where(or_(Recipient.name.contains(search, autoescape=True), Recipient.email.contains(search, autoescape=True),
+                               Recipient.identity.contains(search, autoescape=True)))
+    matches = db.session.scalars(query.options(load_only(Recipient.id, Recipient.name, Recipient.identity))
+                                .order_by(Recipient.name, Recipient.identity, Recipient.id).limit(51)).all()
+    return render_template("public.html", campaign=campaign, recipient=recipient, token=None, preview=True,
                            confirmed=campaign.confirmation_mode == "visit",
                            complete=campaign.confirmation_mode == "visit" and not campaign.form_enabled, errors={}, values={},
-                           branding=public_branding(campaign))
+                           branding=public_branding(campaign), confirmation_text=render_confirmation_text(campaign.confirmation_text, recipient),
+                           preview_recipients=matches[:50], preview_more=len(matches) > 50, preview_search=search,
+                           preview_selected_separate=bool(recipient and all(match.id != recipient.id for match in matches[:50])))
 
 
 @bp.route("/r/<token>", methods=["GET", "POST"])
@@ -459,7 +481,8 @@ def public_confirmation(token):
     complete = recipient.submission is not None if campaign.form_enabled else recipient.confirmed_at is not None
     return render_template("public.html", campaign=campaign, recipient=recipient, token=token, preview=False,
                            confirmed=recipient.confirmed_at is not None,
-                           complete=complete, errors=errors, values=values, branding=public_branding(campaign)), status
+                           complete=complete, errors=errors, values=values, branding=public_branding(campaign),
+                           confirmation_text=render_confirmation_text(campaign.confirmation_text, recipient)), status
 
 
 @bp.post("/admin/settings/branding")
@@ -489,7 +512,10 @@ def branding_settings():
 def logo_response(branding):
     if branding is None or not branding.logo_data:
         abort(404)
-    return Response(branding.logo_data, mimetype=branding.logo_mime)
+    response = Response(branding.logo_data, mimetype=branding.logo_mime)
+    if branding.logo_mime == "image/svg+xml":
+        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    return response
 
 
 @bp.get("/admin/settings/branding/logo")
