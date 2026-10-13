@@ -1,5 +1,4 @@
 import argparse
-import sqlite3
 from pathlib import Path
 
 from alembic import command
@@ -33,8 +32,7 @@ def migrate(app):
 
 def main():
     parser = argparse.ArgumentParser(description="Campaign Action Endpoint")
-    parser.add_argument("command", choices=["migrate", "run", "backup"])
-    parser.add_argument("destination", nargs="?")
+    parser.add_argument("command", choices=["migrate", "run"])
     args = parser.parse_args()
     from . import create_app
     app = create_app()
@@ -43,21 +41,6 @@ def main():
     elif args.command == "run":
         migrate(app)
         app.run(host="127.0.0.1", port=8080)
-    elif args.command == "backup":
-        if not args.destination:
-            parser.error("backup requires a destination path")
-        destination = Path(args.destination).expanduser().resolve()
-        if destination.exists():
-            parser.error("backup destination already exists")
-        source_path = Path(app.config["DATABASE_PATH"]).resolve()
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        # SQLite's backup API includes committed WAL data during live operation.
-        with sqlite3.connect(source_path.as_uri() + "?mode=ro", uri=True) as source:
-            if source.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'").fetchone() is None:
-                parser.error("backup source is not an initialized application database")
-            with sqlite3.connect(destination) as target:
-                source.backup(target)
-        print(f"Backup saved: {destination}")
 
 
 if __name__ == "__main__":

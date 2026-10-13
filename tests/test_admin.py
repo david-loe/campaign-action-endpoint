@@ -1,7 +1,4 @@
-import os
 import sqlite3
-import subprocess
-import sys
 
 import pytest
 from werkzeug.datastructures import MultiDict
@@ -99,28 +96,19 @@ def test_labels_are_html_escaped(app, client, factory):
     assert "&lt;script&gt;" in page.text
 
 
-def test_migrations_are_idempotent_and_backup_contains_wal(app, factory, tmp_path):
+def test_migrations_are_idempotent_and_preserve_data(app, factory):
     item = factory(mode="visit")
     app.test_client().get(item["path"])
+    with app.app_context():
+        confirmed_at = db.session.get(Recipient, item["recipient_id"]).confirmed_at
     migrate(app)
-    destination = tmp_path / "backup.sqlite3"
-    environment = dict(os.environ, ENCYPTION_SECRET=app.config["SECRET_KEY"],
-                       ADMIN_USERNAME="admin", ADMIN_PASSWORD=PASSWORD, PUBLIC_BASE_URL="http://localhost",
-                       DATABASE_PATH=app.config["DATABASE_PATH"])
-    subprocess.run([sys.executable, "-m", "campaign_action", "backup", str(destination)], check=True, capture_output=True, env=environment)
-    with sqlite3.connect(destination) as target:
+    migrate(app)
+    with app.app_context():
+        assert db.session.get(Recipient, item["recipient_id"]).confirmed_at == confirmed_at
+    with sqlite3.connect(app.config["DATABASE_PATH"]) as target:
         assert target.execute("SELECT confirmed_at FROM recipient").fetchone()[0]
         assert target.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert target.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0002"
-
-
-def test_backup_rejects_uninitialized_database(app, tmp_path):
-    destination = tmp_path / "must-not-create.sqlite3"
-    environment = dict(os.environ, ENCYPTION_SECRET=app.config["ENCYPTION_SECRET"], ADMIN_USERNAME="admin",
-                       ADMIN_PASSWORD=PASSWORD, PUBLIC_BASE_URL="http://localhost", DATABASE_PATH=str(tmp_path / "empty.sqlite3"))
-    result = subprocess.run([sys.executable, "-m", "campaign_action", "backup", str(destination)], capture_output=True, env=environment)
-    assert result.returncode != 0 and not destination.exists()
-    assert b"not an initialized" in result.stderr
 
 
 @pytest.mark.parametrize("change", [
