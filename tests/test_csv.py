@@ -36,6 +36,7 @@ def test_listmonk_csv_round_trip(app, client, factory, delimiter):
     assert exported_attrs["city"] == "Köln" and exported_attrs["nested"] == attrs["nested"]
     assert exported_attrs["campaign_action_links"]["previous"] == "https://example.com/old"
     link = exported_attrs["campaign_action_links"][item["campaign_uuid"]]
+    assert len(link.rsplit("/r/", 1)[1]) == 22
     repeated = read_csv(client.post(path + "/export/links", data={"csrf_token": token, "format": "listmonk"}))
     assert rows == repeated
     results = read_csv(client.get(path + "/export/results"))
@@ -155,6 +156,7 @@ def test_long_unicode_keys_produce_working_links(app, client, factory):
     path = f'/admin/campaigns/{item["campaign_id"]}'
     rows = read_csv(client.post(path + "/export/links", data={"csrf_token": csrf(client.get(path)), "format": "simple"}))
     link = next(row["link"] for row in rows if row["key"] == identity)
+    assert len(link.rsplit("/r/", 1)[1]) == 22
     assert app.test_client().get(link.removeprefix("http://localhost")).status_code == 200
     with app.app_context():
         recipient = db.session.scalar(db.select(Recipient).where(Recipient.identity == identity))

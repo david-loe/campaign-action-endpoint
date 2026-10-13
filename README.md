@@ -24,8 +24,7 @@ Verwaltung: **http://localhost:8080/admin/campaigns**. Daten bleiben im Docker-V
 
 | Variable | Bedeutung |
 | --- | --- |
-| `ENCYPTION_SECRET` | Erforderlich, mindestens 32 Zeichen. Schützt Sessions, Campaign-Schlüssel und Listmonk-Zugangsdaten; dauerhaft unverändert lassen. |
-| `SALT` | Optionaler Salt für neue Campaign-Schlüssel. Darf leer bleiben; Änderungen betreffen nur neue Campaigns. |
+| `ENCYPTION_SECRET` | Erforderlich, mindestens 32 Zeichen. Schützt Sessions und Listmonk-Zugangsdaten; dauerhaft unverändert lassen. |
 | `ADMIN_USERNAME` | Admin-Benutzername, standardmäßig `admin`. |
 | `ADMIN_PASSWORD` | Erforderlich, mindestens 12 Zeichen. |
 | `PUBLIC_BASE_URL` | Öffentlicher HTTP(S)-Origin ohne Unterpfad, standardmäßig `http://localhost:8080`. |
@@ -35,6 +34,8 @@ Verwaltung: **http://localhost:8080/admin/campaigns**. Daten bleiben im Docker-V
 Für öffentlichen Betrieb einen HTTPS-Reverse-Proxy verwenden und `PUBLIC_BASE_URL` entsprechend setzen. HTTPS aktiviert sichere Session-Cookies.
 
 Compose nutzt `ghcr.io/david-loe/campaign-action-endpoint:main`. Für eine feste Version den Image-Tag direkt in `compose.yaml` ändern.
+
+**Persönliche Links:** Bestätigungslinks verwenden `/r/` mit einem zufälligen, URL-sicheren Code aus 22 Zeichen (128 Bit Zufall). Sie enthalten keine Empfängerdaten und bleiben bei erneutem Export unverändert. Migration `0004` ersetzt vorhandene lokale Links durch kurze Codes; die alten Links werden ungültig. Empfänger, Bestätigungszeitpunkte und Formularantworten bleiben erhalten. Neu exportierte Links können anschließend wie gewohnt an Listmonk übertragen werden.
 
 **Listmonk:** Unter **Admin-Einstellungen** Instanz-URL, API-Benutzername und API-Token eintragen, Verbindung aktivieren und testen. Der API-Benutzer benötigt Leserechte für Listen und Subscribers sowie für Exporte `subscribers:manage` und Zugriff auf die gewählte Liste. Die Instanz muss Subscriber-Updates per `PATCH` unterstützen.
 

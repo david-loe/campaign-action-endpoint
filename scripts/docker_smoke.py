@@ -79,6 +79,7 @@ def main():
         post(preview_path, {"csrf_token": csrf(preview)})
         data, _ = post(path + "/export/links", {"csrf_token": csrf(get(path)), "format": "simple"})
         link = next(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))["link"]
+        assert re.fullmatch(r"[A-Za-z0-9_-]{22}", link.rsplit("/r/", 1)[1])
         get(urllib.parse.urlsplit(link).path)
         before = next(csv.DictReader(io.StringIO(get(path + "/export/results").decode("utf-8-sig"))))
         assert before["confirmed_at"] and before["email"] == "smoke@example.com"

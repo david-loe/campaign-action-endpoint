@@ -4,8 +4,6 @@ from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
 
-from .crypto import new_campaign_secret
-
 db = SQLAlchemy()
 
 
@@ -21,7 +19,6 @@ class Campaign(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     uuid = db.Column(db.String(36), unique=True, nullable=False, default=new_uuid)
     name = db.Column(db.String(200), nullable=False)
-    secret = db.Column(db.Text, nullable=False, default=new_campaign_secret)
     identity_type = db.Column(db.String(10), nullable=False, default="email")
     key_column = db.Column(db.String(200), nullable=False, default="key")
     confirmation_mode = db.Column(db.String(10), nullable=False, default="action")
@@ -61,8 +58,7 @@ class Recipient(db.Model):
     name = db.Column(db.String(200), nullable=False, default="")
     source = db.Column(db.JSON, nullable=False, default=dict)
     attributes = db.Column(db.JSON, nullable=False, default=dict)
-    token = db.Column(db.Text, unique=True, index=True)
-    token_version = db.Column(db.Integer, nullable=False, default=2)
+    token = db.Column(db.String(22), unique=True, index=True)
     confirmed_at = db.Column(db.DateTime(timezone=True), index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     campaign = db.relationship("Campaign", back_populates="recipients")

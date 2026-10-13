@@ -1,11 +1,9 @@
-import json
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
 
 from campaign_action.models import Campaign, Recipient, Submission, db
-from campaign_action.crypto import campaign_cipher
 from conftest import csrf, settings_data
 
 
@@ -17,6 +15,7 @@ def test_confirmation_modes(app, factory, mode, form):
     page = client.get(item["path"])
     assert page.status_code == 200
     assert ("Bestätigung erfolgreich" in page.text) == (mode == "visit" and not form)
+    assert ("Eigener Bestätigungstext" in page.text) == (mode == "visit" and not form)
     with app.app_context():
         recipient = db.session.get(Recipient, item["recipient_id"])
         assert (recipient.confirmed_at is not None) == (mode == "visit")
@@ -36,10 +35,17 @@ def test_confirmation_modes(app, factory, mode, form):
         assert (recipient.submission is not None) == form
 
 
-def test_head_and_admin_preview_do_not_confirm(app, client, factory):
-    item = factory(mode="visit", form=True)
+@pytest.mark.parametrize("mode", ["visit", "action"])
+@pytest.mark.parametrize("form", [False, True])
+@pytest.mark.parametrize("show_text", [False, True])
+def test_head_and_admin_preview_do_not_confirm(app, client, factory, mode, form, show_text):
+    item = factory(mode=mode, form=form, show_text=show_text)
     assert app.test_client().head(item["path"]).status_code == 200
-    assert client.get(f'/admin/campaigns/{item["campaign_id"]}/preview').status_code == 200
+    preview = client.get(f'/admin/campaigns/{item["campaign_id"]}/preview')
+    assert preview.status_code == 200
+    assert ("Bestätigung erfolgreich" in preview.text) == (mode == "visit" and (not form or show_text))
+    assert ("Eigener Bestätigungstext" in preview.text) == ((mode == "visit" and not form) or (form and show_text))
+    assert ('<form method="post"' in preview.text) == (form or mode == "action")
     with app.app_context():
         recipient = db.session.get(Recipient, item["recipient_id"])
         assert recipient.confirmed_at is None
@@ -47,10 +53,21 @@ def test_head_and_admin_preview_do_not_confirm(app, client, factory):
 
 
 @pytest.mark.parametrize("show_text", [False, True])
-def test_text_display_setting(app, factory, show_text):
-    item = factory(form=True, show_text=show_text)
-    page = app.test_client().get(item["path"])
+@pytest.mark.parametrize("mode", ["visit", "action"])
+def test_text_display_setting(app, factory, show_text, mode):
+    item = factory(mode=mode, form=True, show_text=show_text)
+    public = app.test_client()
+    page = public.get(item["path"])
     assert ("Eigener Bestätigungstext" in page.text) == show_text
+    assert ("Bestätigung erfolgreich" in page.text) == (mode == "visit" and show_text)
+    invalid = public.post(item["path"], data={"csrf_token": csrf(page)})
+    assert invalid.status_code == 422
+    assert ("Eigener Bestätigungstext" in invalid.text) == show_text
+    assert ("Bestätigung erfolgreich" in invalid.text) == (mode == "visit" and show_text)
+    complete = public.post(item["path"], data={"csrf_token": csrf(page), f'field_{item["field_ids"][0]}': "Ada"},
+                           follow_redirects=True)
+    assert complete.status_code == 200
+    assert "Eigener Bestätigungstext" in complete.text and "Bestätigung erfolgreich" in complete.text
 
 
 @pytest.mark.parametrize("kind,bad,good", [
@@ -66,6 +83,7 @@ def test_server_side_field_validation(app, factory, kind, bad, good):
     invalid = client.post(item["path"], data={"csrf_token": token, key: bad})
     assert invalid.status_code == 422
     assert 'aria-invalid="true"' in invalid.text
+    assert "Bestätigung erfolgreich" not in invalid.text
     with app.app_context():
         recipient = db.session.get(Recipient, item["recipient_id"])
         assert recipient.confirmed_at is None and recipient.submission is None
@@ -76,11 +94,15 @@ def test_server_side_field_validation(app, factory, kind, bad, good):
         assert recipient.submission.answers[str(item["field_ids"][1])] == ""
 
 
-def test_direct_confirmation_survives_invalid_form(app, factory):
-    item = factory(mode="visit", form=True)
+@pytest.mark.parametrize("show_text", [False, True])
+def test_direct_confirmation_survives_invalid_form(app, factory, show_text):
+    item = factory(mode="visit", form=True, show_text=show_text)
     client = app.test_client()
     token = csrf(client.get(item["path"]))
-    assert client.post(item["path"], data={"csrf_token": token}).status_code == 422
+    invalid = client.post(item["path"], data={"csrf_token": token})
+    assert invalid.status_code == 422
+    assert ("Bestätigung erfolgreich" in invalid.text) == show_text
+    assert ("Eigener Bestätigungstext" in invalid.text) == show_text
     with app.app_context():
         recipient = db.session.get(Recipient, item["recipient_id"])
         assert recipient.confirmed_at is not None and recipient.submission is None
@@ -138,17 +160,11 @@ def test_concurrent_direct_gets(app, factory):
 def test_invalid_tokens_and_campaign_isolation(app, factory):
     first, second = factory(mode="visit"), factory(mode="visit")
     token = first["path"].split("/r/")[1]
-    altered = token[:40] + ("A" if token[40] != "A" else "B") + token[41:]
+    altered = ("A" if token[0] != "A" else "B") + token[1:]
     assert app.test_client().get("/r/" + altered).status_code == 404
     assert app.test_client().get("/r/not-a-token").status_code == 404
-    with app.app_context():
-        fernet = campaign_cipher(db.session.get(Campaign, first["campaign_id"]))
-        payload = json.loads(fernet.decrypt(token.encode()))
-        assert payload["identity"] == "person@example.com"
-        assert "person@example.com" not in token
-        payload["campaign"] = second["campaign_uuid"]
-        mismatch = fernet.encrypt(json.dumps(payload).encode()).decode()
-    assert app.test_client().get("/r/" + mismatch).status_code == 404
+    assert len(token) == 22 and "person@example.com" not in token
+    assert token != second["path"].split("/r/")[1]
     app.test_client().get(first["path"])
     with app.app_context():
         assert db.session.get(Recipient, second["recipient_id"]).confirmed_at is None

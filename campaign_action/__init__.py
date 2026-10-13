@@ -30,7 +30,6 @@ def create_app(config=None):
     app = Flask(__name__)
     app.config.from_mapping(
         ENCYPTION_SECRET=os.environ.get("ENCYPTION_SECRET", ""),
-        SALT=os.environ.get("SALT", ""),
         ADMIN_USERNAME=os.environ.get("ADMIN_USERNAME", ""),
         ADMIN_PASSWORD=os.environ.get("ADMIN_PASSWORD", ""),
         PUBLIC_BASE_URL=os.environ.get("PUBLIC_BASE_URL", ""),
@@ -72,15 +71,10 @@ def create_app(config=None):
     app.register_blueprint(listmonk_bp)
     app.jinja_env.filters["timestamp"] = iso_date
 
-    # Reject a wrong encryption environment at startup, before any requests or
-    # migrations can generate keys that cannot open the existing database.
+    # Reject a wrong encryption environment before accessing stored credentials.
     from .crypto import decrypt_value
     with app.app_context(), db.engine.connect() as connection:
         schema = inspect(connection)
-        if schema.has_table("campaign") and "secret" in {column["name"] for column in schema.get_columns("campaign")}:
-            encrypted = connection.execute(text("SELECT secret FROM campaign WHERE secret IS NOT NULL LIMIT 1")).scalar()
-            if encrypted:
-                decrypt_value(encrypted)
         if schema.has_table("listmonk_config"):
             encrypted = connection.execute(text("SELECT token FROM listmonk_config WHERE token != '' LIMIT 1")).scalar()
             if encrypted:

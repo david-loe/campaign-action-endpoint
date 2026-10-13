@@ -13,7 +13,7 @@ from .branding import (DEFAULT_ACCENT, apply_logo, branding_css, effective_brand
                        public_branding, read_logo, validate_color)
 from .models import BrandingConfig, Campaign, FormField, ImportJob, LoginAttempt, ListmonkConfig, Recipient, Submission, TransferJob, db, utcnow
 from .services import (FIELD_TYPES, LISTMONK_COLUMNS, annotate_import, begin_write, confirm,
-                       confirmation_link, csv_bytes, decode_token, iso_date, listmonk_values,
+                       confirmation_link, csv_bytes, iso_date, listmonk_values,
                        parse_csv, token_recipient, validate_answers)
 
 bp = Blueprint("web", __name__)
@@ -425,6 +425,7 @@ def export_results(campaign_id):
 def campaign_preview(campaign_id):
     campaign = campaign_or_404(campaign_id)
     return render_template("public.html", campaign=campaign, recipient=None, token=None, preview=True,
+                           confirmed=campaign.confirmation_mode == "visit",
                            complete=campaign.confirmation_mode == "visit" and not campaign.form_enabled, errors={}, values={},
                            branding=public_branding(campaign))
 
@@ -433,10 +434,7 @@ def campaign_preview(campaign_id):
 def public_confirmation(token):
     if request.method != "HEAD":
         begin_write()
-    payload = decode_token(token)
-    if payload is None:
-        return public_error()
-    recipient = token_recipient(payload)
+    recipient = token_recipient(token)
     if recipient is None:
         return public_error()
     campaign = recipient.campaign
@@ -460,6 +458,7 @@ def public_confirmation(token):
         db.session.commit()
     complete = recipient.submission is not None if campaign.form_enabled else recipient.confirmed_at is not None
     return render_template("public.html", campaign=campaign, recipient=recipient, token=token, preview=False,
+                           confirmed=recipient.confirmed_at is not None,
                            complete=complete, errors=errors, values=values, branding=public_branding(campaign)), status
 
 

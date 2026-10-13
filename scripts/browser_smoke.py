@@ -2,6 +2,7 @@
 import argparse
 import csv
 import io
+import re
 import secrets
 import threading
 from pathlib import Path
@@ -24,6 +25,8 @@ class QuietHandler(WSGIRequestHandler):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--screenshots", type=Path, help="Optional screenshot directory")
+    parser.add_argument("--confirmation-mode", choices=("action", "visit"), default="action")
+    parser.add_argument("--hide-text-with-form", action="store_true")
     args = parser.parse_args()
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=True)
@@ -63,8 +66,10 @@ def main():
                 page.get_by_role("link", name="Campaigns", exact=True).click()
                 page.get_by_role("link", name="+ Neue Campaign").click()
                 page.get_by_label("Campaign-Name", exact=True).fill("Herbstkampagne 2026")
+                page.locator('select[name="confirmation_mode"]').select_option(args.confirmation_mode)
                 page.get_by_label("Formular aktivieren", exact=True).check()
-                page.get_by_label("Bestätigungstext bereits über dem offenen Formular anzeigen").check()
+                if not args.hide_text_with_form:
+                    page.get_by_label("Bestätigungstext bereits über dem offenen Formular anzeigen").check()
                 page.locator('textarea[name="confirmation_text"]').fill("Vielen Dank für Ihre Teilnahme!")
                 for label, kind, required in [("Ihr Name", "text", "1"), ("Kontakt-E-Mail", "email", "1"),
                                                ("Anzahl Gäste", "number", "0"), ("Wunschtermin", "date", "0")]:
@@ -87,6 +92,7 @@ def main():
                 with page.expect_download() as download:
                     page.get_by_role("button", name="E-Mail + Link exportieren").click()
                 rows = list(csv.DictReader(io.StringIO(Path(download.value.path()).read_text(encoding="utf-8-sig"))))
+                assert all(re.fullmatch(r"[A-Za-z0-9_-]{22}", row["link"].rsplit("/r/", 1)[1]) for row in rows)
                 if args.screenshots:
                     page.screenshot(path=str(args.screenshots / "admin.png"), full_page=True)
                 mobile = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
@@ -100,8 +106,9 @@ def main():
                 assert recipient.get_by_text("Herbstkampagne 2026", exact=True).is_visible()
                 assert "Campaign Action" not in recipient.locator("body").inner_text()
                 assert "Ihre Rückmeldung" not in recipient.locator("body").inner_text()
+                assert recipient.get_by_text("Bestätigung erfolgreich", exact=True).count() == (1 if args.confirmation_mode == "visit" and not args.hide_text_with_form else 0)
                 assert recipient.evaluate("window.cspViolations.length === 0"), "Public page CSP violation"
-                assert recipient.get_by_text("Vielen Dank für Ihre Teilnahme!", exact=True).is_visible()
+                assert recipient.get_by_text("Vielen Dank für Ihre Teilnahme!", exact=True).count() == (0 if args.hide_text_with_form else 1)
                 assert recipient.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Mobile overflow"
                 if args.screenshots:
                     recipient.screenshot(path=str(args.screenshots / "public.png"), full_page=True)
@@ -109,7 +116,7 @@ def main():
                 recipient.get_by_label("Kontakt-E-Mail").fill("anna@example.com")
                 recipient.get_by_label("Wunschtermin").fill("2026-11-01")
                 recipient.get_by_label("Anzahl Gäste").fill("2")
-                recipient.get_by_role("button", name="Jetzt bestätigen").click()
+                recipient.get_by_role("button", name="Angaben absenden" if args.confirmation_mode == "visit" else "Jetzt bestätigen").click()
                 assert recipient.get_by_text("Ihre Angaben wurden gespeichert. Die Abgabe ist abgeschlossen.").is_visible()
                 assert recipient.get_by_text("Bestätigung erfolgreich", exact=True).is_visible()
                 assert recipient.locator(".completion-mark svg path").evaluate("path => getComputedStyle(path).stroke") == "rgb(21, 117, 82)"
@@ -132,6 +139,7 @@ def main():
                 page.get_by_role("button", name="Campaign speichern", exact=True).click()
                 preview = context.new_page()
                 preview.goto(campaign_url + "/preview")
+                assert preview.get_by_text("Bestätigung erfolgreich", exact=True).count() == (1 if args.confirmation_mode == "visit" and not args.hide_text_with_form else 0)
                 assert preview.locator(".public-logo").count() == 0
                 assert preview.title() == "Bestätigung"
                 assert preview.locator(".primary").evaluate("button => getComputedStyle(button).backgroundColor") == "rgb(255, 204, 0)"
@@ -168,6 +176,8 @@ def main():
                 page.get_by_role("heading", name="Abgeschlossen", exact=True).wait_for()
                 assert api.subscribers[10]["attribs"]["campaign_action_links"]["previous"] == "https://example.com/old"
                 assert len(api.subscribers[10]["attribs"]["campaign_action_links"]) == 2
+                assert all(re.fullmatch(r"[A-Za-z0-9_-]{22}", link.rsplit("/r/", 1)[1])
+                           for campaign, link in api.subscribers[10]["attribs"]["campaign_action_links"].items() if campaign != "previous")
                 if args.screenshots:
                     page.screenshot(path=str(args.screenshots / "listmonk.png"), full_page=True)
                 mobile_admin = mobile.new_page()

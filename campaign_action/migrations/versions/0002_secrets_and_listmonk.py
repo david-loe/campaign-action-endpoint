@@ -1,13 +1,30 @@
 """Independent campaign keys and resumable listmonk transfers."""
+import base64
+import secrets
+
 from alembic import op
 import sqlalchemy as sa
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from flask import current_app
 
-from campaign_action.crypto import new_campaign_secret
 
 revision = "0002"
 down_revision = "0001"
 branch_labels = None
 depends_on = None
+
+
+def new_campaign_secret():
+    # Frozen historical implementation: current links no longer use keys.
+    entropy = secrets.token_bytes(32)
+    salt = current_app.config.get("SALT", "").encode() or None
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=salt,
+               info=b"campaign-action:campaign:v2").derive(entropy)
+    storage_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None,
+                       info=b"campaign-action:storage:v1").derive(current_app.config["ENCYPTION_SECRET"].encode())
+    return Fernet(base64.urlsafe_b64encode(storage_key)).encrypt(base64.urlsafe_b64encode(key)).decode()
 
 
 def upgrade():

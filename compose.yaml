@@ -6,7 +6,6 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       ENCYPTION_SECRET: ${ENCYPTION_SECRET:?Generate ENCYPTION_SECRET with openssl rand -hex 32}
-      SALT: ${SALT:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set an admin password of at least 12 characters}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}

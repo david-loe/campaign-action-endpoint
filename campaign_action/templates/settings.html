@@ -43,7 +43,7 @@
     {% if locked and values.form_enabled %}<input type="hidden" name="form_enabled" value="1">{% endif %}
     <label class="check-label"><input type="checkbox" {% if not locked %}name="form_enabled"{% else %}disabled{% endif %} value="1" {% if values.form_enabled %}checked{% endif %}>Formular aktivieren</label>
     <label class="check-label"><input type="checkbox" name="show_text_with_form" value="1" {% if values.show_text_with_form %}checked{% endif %}>Bestätigungstext bereits über dem offenen Formular anzeigen</label>
-    <p class="help">Nach erfolgreicher Abgabe wird der Bestätigungstext immer angezeigt. Jede Formularabgabe ist final.</p>
+    <p class="help">Wenn aktiviert, erscheint der Bestätigungstext über dem offenen Formular; bei erfolgter Bestätigung zusätzlich der grüne Haken. Nach erfolgreicher Abgabe werden beide immer angezeigt. Jede Formularabgabe ist final.</p>
     <div id="field-list" class="stack" data-locked="{{ 'true' if locked else 'false' }}">
       {% for field in values.fields %}{% include 'field_editor.html' %}{% endfor %}
     </div>

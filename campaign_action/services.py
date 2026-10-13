@@ -2,16 +2,15 @@ import csv
 import io
 import json
 import re
+import secrets
 from datetime import date, timezone
 from decimal import Decimal, InvalidOperation
 
-from cryptography.fernet import InvalidToken
 from email_validator import EmailNotValidError, validate_email
 from flask import current_app
 from sqlalchemy import text
 
 from .models import Campaign, Recipient, db, utcnow
-from .crypto import campaign_cipher
 
 FIELD_TYPES = {"text", "email", "number", "date"}
 LISTMONK_COLUMNS = ["uuid", "email", "name", "attributes", "status", "created_at", "updated_at"]
@@ -34,41 +33,22 @@ def normalized_email(value):
 
 def confirmation_link(recipient):
     if not recipient.token:
-        payload = {"v": 2, "campaign": recipient.campaign.uuid, "recipient": recipient.uuid, "identity": recipient.identity}
-        recipient.token = campaign_cipher(recipient.campaign).encrypt(json.dumps(payload, ensure_ascii=False).encode()).decode()
-        recipient.token_version = 2
+        for _ in range(5):
+            token = secrets.token_urlsafe(16)
+            if db.session.scalar(db.select(Recipient.id).where(Recipient.token == token).limit(1)) is None:
+                recipient.token = token
+                break
+        else:
+            raise RuntimeError("Ein eindeutiger Bestätigungslink konnte nicht erzeugt werden.")
     return current_app.config["PUBLIC_BASE_URL"] + "/r/" + recipient.token
 
 
-def decode_token(token):
-    if len(token) > 2048:
+def token_recipient(token):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{22}", token):
         return None
-    try:
-        recipient = db.session.scalar(db.select(Recipient).where(Recipient.token == token))
-        if recipient is None:
-            return None
-        if recipient.token_version == 1:
-            # Previously issued tokens were persisted. Exact bearer-token lookup
-            # preserves them without retaining the removed global link SECRET.
-            return {"v": 1, "campaign": recipient.campaign.uuid, "recipient": recipient.uuid, "identity": recipient.identity}
-        payload = json.loads(campaign_cipher(recipient.campaign).decrypt(token.encode()))
-        if not isinstance(payload, dict) or payload.get("v") != 2:
-            return None
-        if not all(isinstance(payload.get(key), str) for key in ("campaign", "recipient", "identity")):
-            return None
-        if (payload["campaign"], payload["recipient"], payload["identity"]) != (recipient.campaign.uuid, recipient.uuid, recipient.identity):
-            return None
-        return payload
-    except (InvalidToken, ValueError, TypeError, UnicodeError):
-        return None
-
-
-def token_recipient(payload):
-    recipient = db.session.scalar(db.select(Recipient).join(Campaign).where(
-        Recipient.uuid == payload["recipient"], Campaign.uuid == payload["campaign"],
-        Recipient.identity == payload["identity"], Campaign.active.is_(True),
+    return db.session.scalar(db.select(Recipient).join(Campaign).where(
+        Recipient.token == token, Campaign.active.is_(True),
     ))
-    return recipient
 
 
 def confirm(recipient):
