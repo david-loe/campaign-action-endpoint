@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Listmonk-Vorgang · Campaign Action{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='transfer.js') }}" defer></script>{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('web.campaign_detail', campaign_id=job.campaign_id) }}">← {{ job.campaign.name }}</a>
+<div class="page-heading"><p class="eyebrow">LISTMONK-{{ 'IMPORT' if job.direction == 'import' else 'EXPORT' }}</p><h1>{{ status_labels.get(job.status, job.status) }}</h1><p class="muted">Liste: {{ job.list_name }} · {{ job.created_at|timestamp }}</p></div>
+{% if job.direction == 'import' and job.identity_type == 'key' %}<p class="help">Key-Quelle: {{ job.key_attribute if job.key_source == 'attribute' else 'Subscriber-' ~ job.key_source|upper }}</p>{% endif %}
+{% if job.error %}<div class="notice error" role="alert">{{ job.error }}</div>{% endif %}
+{% if not current %}<div class="notice error">Die Konfiguration oder Identifikationsart wurde geändert. Starten Sie einen neuen Vorgang.</div>{% endif %}
+{% if job.status in ['loading', 'running'] and current %}
+<section class="card stack" id="transfer-progress" data-autostart="{{ 'true' if autorun else 'false' }}">
+  <p id="transfer-message" role="status">Die Verarbeitung erfolgt in kleinen Chargen. Beim Schließen des Browsers pausiert der Vorgang.</p>
+  <p><strong id="transfer-count">{{ summary.values()|sum if job.status == 'loading' else summary.get('done', 0) + summary.get('skipped', 0) + summary.get('error', 0) }}</strong> / <span id="transfer-total">{{ job.total }}</span> verarbeitet</p>
+  <form method="post" action="{{ url_for('listmonk.job_step', job_id=job.id) }}" id="transfer-step"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="actions"><button class="button primary" id="transfer-continue" type="submit">Verarbeitung fortsetzen</button><button class="button secondary" id="transfer-pause" type="button" hidden>Pausieren</button></div></form>
+  <p class="help">Ohne JavaScript verarbeitet jeder Klick eine Charge. Sie finden diesen Vorgang später in Ihrer Campaign wieder.</p>
+</section>
+{% endif %}
+{% if job.status == 'preview' %}
+<section class="card stack"><h2>Importvorschau</h2><p>{{ summary.get('staged', 0) }} gültige Subscribers · {{ duplicates }} Dubletten · {{ summary.get('invalid', 0) }} Fehler</p>
+{% if summary.get('invalid') %}<div class="notice error">Fehlerhafte Subscribers verhindern die gesamte Übernahme. Korrigieren Sie die Daten oder die Key-Auswahl und starten Sie einen neuen Import.</div>{% endif %}
+<form method="post" action="{{ url_for('listmonk.job_commit', job_id=job.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary" {% if not current or summary.get('invalid') %}disabled{% endif %}>{{ summary.get('staged', 0) - duplicates }} Empfänger importieren</button></form></section>
+{% endif %}
+{% if job.status == 'ready' %}
+<section class="card stack"><h2>Exportvorschau</h2><p>{{ summary.get('pending', 0) }} vorhandene Subscribers aktualisieren · {{ summary.get('skipped', 0) }} Empfänger überspringen</p><p class="help">Vor jedem Update werden die aktuellen Attribute und die Listenmitgliedschaft erneut geprüft.</p><form method="post" action="{{ url_for('listmonk.job_commit', job_id=job.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary" {% if not current %}disabled{% endif %}>{{ summary.get('pending', 0) }} Links übertragen</button></form></section>
+{% endif %}
+{% if job.status in ['failed', 'partial'] and current %}<form method="post" action="{{ url_for('listmonk.job_retry', job_id=job.id) }}" class="actions"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary">Fehlgeschlagene Verarbeitung erneut versuchen</button></form>{% endif %}
+{% if job.direction == 'export' and job.status in ['done', 'partial'] %}<div class="notice {{ 'success' if job.status == 'done' else '' }}">{{ summary.get('done', 0) }} Links übertragen · {{ summary.get('skipped', 0) }} übersprungen · {{ summary.get('error', 0) }} fehlgeschlagen.</div>{% endif %}
+{% if rows %}<section class="card table-card"><div class="table-scroll"><table><thead><tr><th>Subscriber-ID</th><th>Identität</th><th>Name</th><th>Übernahme</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.line }}</td><td class="identity">{{ row.identity }}</td><td>{{ row.name }}</td><td>{{ 'Dubletten überspringen' if row.duplicate else 'Neu importieren' }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+{% if items %}<section class="card table-card"><div class="table-scroll"><table><thead><tr><th>Subscriber-ID</th><th>Identität</th><th>Status</th><th>Ergebnis</th></tr></thead><tbody>{% for item in items %}<tr><td>{{ item.subscriber_id or '—' }}</td><td class="identity">{{ item.payload.get('identity') or item.payload.get('email') or item.subscriber_id }}</td><td>{{ {'staged':'Geladen','invalid':'Ungültig','pending':'Offen','done':'Übertragen','skipped':'Übersprungen','error':'Fehlgeschlagen'}.get(item.status, item.status) }}</td><td>{{ item.message or '—' }}</td></tr>{% endfor %}</tbody></table></div></section><p class="help">Es werden bis zu 100 Einträge angezeigt, Fehler zuerst.</p>{% endif %}
+{% endblock %}

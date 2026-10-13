@@ -1,0 +1,17 @@
+<fieldset class="field-editor">
+  <legend>Formularfeld {{ loop.index if loop is defined else '' }}</legend>
+  <input type="hidden" name="field_id" value="{{ field.id }}">
+  <div class="form-grid">
+    <label>Bezeichnung<input name="field_label" value="{{ field.label }}" maxlength="200" required></label>
+    <label>Typ
+      {% if locked %}<input type="hidden" name="field_type" value="{{ field.field_type }}">{% endif %}
+      <select {% if locked %}disabled{% else %}name="field_type"{% endif %}>{% for field_type, label in [('text','Text'),('email','E-Mail'),('number','Zahl'),('date','Datum')] %}<option value="{{ field_type }}" {% if field.field_type == field_type %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    </label>
+    <label>Pflichtfeld
+      {% if locked %}<input type="hidden" name="field_required" value="{{ field.required }}">{% endif %}
+      <select {% if locked %}disabled{% else %}name="field_required"{% endif %}><option value="0" {% if field.required == '0' %}selected{% endif %}>Nein</option><option value="1" {% if field.required == '1' %}selected{% endif %}>Ja</option></select>
+    </label>
+  </div>
+  <label>Beschreibung<textarea name="field_description" maxlength="2000" rows="2">{{ field.description }}</textarea></label>
+  {% if not locked %}<div class="actions"><button type="button" class="button subtle" data-move="up" aria-label="Feld nach oben verschieben">↑ Nach oben</button><button type="button" class="button subtle" data-move="down" aria-label="Feld nach unten verschieben">↓ Nach unten</button><button type="button" class="button danger subtle" data-remove>Feld entfernen</button></div>{% endif %}
+</fieldset>

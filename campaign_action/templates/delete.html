@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block title %}Löschen bestätigen · Campaign Action{% endblock %}
+{% block main_class %}container narrow{% endblock %}
+{% block content %}
+<div class="page-heading"><p class="eyebrow">VERWALTUNG</p><h1>{{ 'Empfänger' if recipient else 'Campaign' }} löschen?</h1></div>
+<section class="card stack"><p><strong>{{ recipient.identity if recipient else campaign.name }}</strong> und {% if recipient %}die zugehörige Bestätigung und Formularabgabe{% else %}alle zugehörigen Empfänger, Bestätigungen und Formularabgaben{% endif %} werden endgültig gelöscht. Die persönlichen Links sind anschließend ungültig.</p><form method="post" class="actions"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger">Endgültig löschen</button><a class="button secondary" href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">Abbrechen</a></form></section>
+{% endblock %}

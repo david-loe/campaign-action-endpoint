@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}Listmonk-{{ 'Import' if direction == 'import' else 'Export' }} · Campaign Action{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">← {{ campaign.name }}</a>
+<div class="page-heading"><p class="eyebrow">LISTMONK</p><h1>{{ 'Empfänger importieren' if direction == 'import' else 'Persönliche Links übertragen' }}</h1><p class="muted">Wählen Sie eine Subscriber-Liste aus Ihrer verbundenen Instanz.</p></div>
+{% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+<section class="card stack">
+{% if lists %}<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Subscriber-Liste<select name="list_id" required>{% for list in lists %}<option value="{{ list.id }}">{{ list.name }} ({{ list.id }})</option>{% endfor %}</select></label>
+  {% if direction == 'import' and campaign.identity_type == 'key' %}
+  <label>Quelle für den eindeutigen Key<select name="key_source"><option value="uuid">Subscriber-UUID</option><option value="id">Subscriber-ID</option><option value="attribute">Subscriber-Attribut</option></select></label>
+  <label>Attributname<input name="key_attribute" value="{{ campaign.key_column }}" maxlength="200"><span class="help">Nur für die Quelle „Subscriber-Attribut“. Verschachtelte Attribute sind möglich, z. B. customer.id.</span></label>
+  {% endif %}
+  <div class="notice">{% if direction == 'import' %}Alle Subscribers der Liste werden zunächst geladen und geprüft. Erst nach Bestätigung der Vorschau werden Empfänger übernommen.{% else %}Die Vorschau gleicht Ihre Campaign-Empfänger mit der gewählten Liste ab. Es werden nur Links bei vorhandenen Subscribers ergänzt; keine Subscriber angelegt oder Mitgliedschaften verändert.{% endif %}</div>
+  <button class="button primary" type="submit">Liste laden und Vorschau erstellen</button>
+</form>{% else %}<p>Keine aktiven Listen verfügbar.</p><a class="button secondary" href="{{ url_for('listmonk.settings') }}">Listmonk-Einstellungen prüfen</a>{% endif %}
+</section>
+{% endblock %}

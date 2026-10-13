@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}{{ recipient.identity }} · Campaign Action{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">← {{ campaign.name }}</a>
+<div class="page-heading"><p class="eyebrow">EMPFÄNGER</p><h1 class="identity">{{ recipient.identity }}</h1><p class="muted">{{ recipient.name }}</p></div>
+<section class="card stack"><h2>Status</h2><dl class="detail-list"><div><dt>E-Mail</dt><dd>{{ recipient.email or '—' }}</dd></div><div><dt>Bestätigt (UTC)</dt><dd>{{ recipient.confirmed_at|timestamp or 'Noch nicht bestätigt' }}</dd></div>{% if campaign.form_enabled %}<div><dt>Formular abgegeben (UTC)</dt><dd>{{ recipient.submission.submitted_at|timestamp if recipient.submission else 'Noch keine Abgabe' }}</dd></div>{% endif %}</dl></section>
+<section class="card stack"><h2>Persönlicher Link</h2>{% if link %}<label>Zum Kopieren<input value="{{ link }}" readonly aria-label="Persönlicher Bestätigungslink"></label><p class="help">Ein Aufruf dieses Links kann eine Bestätigung auslösen. Für eine Vorschau ohne Bestätigung verwenden Sie die Campaign-Vorschau.</p>{% else %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button secondary">Persönlichen Link erzeugen</button></form>{% endif %}</section>
+{% if recipient.submission %}<section class="card stack"><h2>Formularantworten</h2><dl class="detail-list">{% for field in campaign.fields %}<div><dt>{{ field.label }}</dt><dd class="preserve-lines">{{ recipient.submission.answers.get(field.id|string, '') or '—' }}</dd></div>{% endfor %}</dl></section>{% endif %}
+<section class="card"><details><summary>Importierte Subscriber-Daten</summary><dl class="detail-list">{% for key, value in recipient.source.items() %}<div><dt>{{ key }}</dt><dd class="identity preserve-lines">{{ value }}</dd></div>{% endfor %}</dl></details></section>
+<a class="button danger subtle" href="{{ url_for('web.recipient_delete', campaign_id=campaign.id, recipient_id=recipient.id) }}">Empfänger löschen</a>
+{% endblock %}

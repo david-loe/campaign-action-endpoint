@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}CSV importieren · Campaign Action{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">← {{ campaign.name }}</a>
+<div class="page-heading"><p class="eyebrow">EMPFÄNGER</p><h1>CSV importieren</h1><p class="muted">Prüfen Sie Ihre Empfänger vor der Übernahme.</p></div>
+<section class="card stack">
+{% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>CSV-Datei<input type="file" name="file" accept=".csv,text/csv" required><span class="help">UTF-8, maximal 10 MiB. Listmonk-Subscriber-Exporte werden unterstützt.</span></label>
+  <div class="form-grid"><label>Trennzeichen<select name="delimiter"><option value=",">Komma (,)</option><option value=";">Semikolon (;)</option></select></label>
+  {% if campaign.identity_type == 'key' %}<label>Spalte mit eindeutigem Key<input name="identity_column" value="{{ campaign.key_column }}" required><span class="help">Exakter Spaltenname aus der ersten CSV-Zeile.</span></label>{% else %}<label>Identitätsspalte<input value="email" disabled></label>{% endif %}</div>
+  <div class="notice">Bestehende Empfänger und Dubletten werden übersprungen. Ihre Bestätigungen und Formulardaten bleiben erhalten.</div>
+  <button class="button primary" type="submit">Importvorschau anzeigen</button>
+</form>
+<details><summary>CSV-Format</summary><p class="help">Für E-Mail-Campaigns genügt die Spalte <code>email</code>. Optional: <code>name</code>, <code>attributes</code> (JSON-Objekt) und weitere Subscriber-Metadaten. Für Key-Campaigns ist die ausgewählte Key-Spalte erforderlich; eine E-Mail ist optional.</p><pre class="code-block">email,name,attributes
+anna@example.com,Anna,"{""city"":""Berlin""}"</pre></details>
+</section>
+{% endblock %}

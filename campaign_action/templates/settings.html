@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Einstellungen' if campaign else 'Neue Campaign' }} · Campaign Action{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='settings.js') }}" defer></script>{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) if campaign else url_for('web.campaigns') }}">← Zurück</a>
+<div class="page-heading"><p class="eyebrow">CAMPAIGN</p><h1>{{ 'Einstellungen' if campaign else 'Neue Campaign' }}</h1><p class="muted">Bestätigungsablauf und Formular an einem Ort.</p></div>
+{% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+{% set locked = campaign and campaign.locked_at %}
+{% if locked %}<div class="notice">Die erste Bestätigung oder Abgabe ist eingegangen. Modus und Formularstruktur sind jetzt festgeschrieben. Texte können Sie weiter bearbeiten.</div>{% endif %}
+<form method="post" class="stack" id="settings-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <section class="card stack"><h2>Allgemein</h2>
+    <label>Campaign-Name<input name="name" value="{{ values.name }}" maxlength="200" required autofocus></label>
+    <div class="form-grid">
+      <label>Empfänger identifizieren über
+        {% if identity_locked %}<input type="hidden" name="identity_type" value="{{ values.identity_type }}">{% endif %}
+        <select {% if identity_locked %}disabled{% else %}name="identity_type"{% endif %}><option value="email" {% if values.identity_type == 'email' %}selected{% endif %}>E-Mail-Adresse</option><option value="key" {% if values.identity_type == 'key' %}selected{% endif %}>Eigener eindeutiger Key</option></select>
+        {% if identity_locked %}<span class="help">Die Identifikationsart ist festgeschrieben.</span>{% endif %}
+      </label>
+      <label>Standard-CSV-Spalte für eigenen Key<input name="key_column" value="{{ values.key_column }}" maxlength="200" required><span class="help">Beim Import einer Key-Campaign auswählbar.</span></label>
+    </div>
+    <label class="check-label"><input type="checkbox" name="active" value="1" {% if values.active %}checked{% endif %}>Campaign aktiv – persönliche Links sind erreichbar</label>
+  </section>
+  <section class="card stack"><h2>Bestätigung</h2>
+    <label>Bestätigung speichern
+      {% if locked %}<input type="hidden" name="confirmation_mode" value="{{ values.confirmation_mode }}">{% endif %}
+      <select {% if locked %}disabled{% else %}name="confirmation_mode"{% endif %}><option value="action" {% if values.confirmation_mode == 'action' %}selected{% endif %}>Bei Button-Klick / gültiger Formularabgabe</option><option value="visit" {% if values.confirmation_mode == 'visit' %}selected{% endif %}>Direkt beim Linkaufruf</option></select>
+      <span class="help">Beim direkten Linkaufruf können auch automatische Abrufe durch E-Mail-Systeme eine Bestätigung auslösen.</span>
+    </label>
+    <label>Bestätigungstext<textarea name="confirmation_text" rows="4" maxlength="10000" required>{{ values.confirmation_text }}</textarea><span class="help">Klartext; Zeilenumbrüche bleiben erhalten.</span></label>
+  </section>
+  <section class="card stack"><h2>Formular</h2>
+    {% if locked and values.form_enabled %}<input type="hidden" name="form_enabled" value="1">{% endif %}
+    <label class="check-label"><input type="checkbox" {% if not locked %}name="form_enabled"{% else %}disabled{% endif %} value="1" {% if values.form_enabled %}checked{% endif %}>Formular aktivieren</label>
+    <label class="check-label"><input type="checkbox" name="show_text_with_form" value="1" {% if values.show_text_with_form %}checked{% endif %}>Bestätigungstext bereits über dem offenen Formular anzeigen</label>
+    <p class="help">Nach erfolgreicher Abgabe wird der Bestätigungstext immer angezeigt. Jede Formularabgabe ist final.</p>
+    <div id="field-list" class="stack" data-locked="{{ 'true' if locked else 'false' }}">
+      {% for field in values.fields %}{% include 'field_editor.html' %}{% endfor %}
+    </div>
+    {% if not locked %}<button class="button secondary" type="button" id="add-field">+ Formularfeld hinzufügen</button>{% endif %}
+  </section>
+  <div class="actions"><button type="submit" class="button primary">Campaign speichern</button>{% if campaign %}<a class="button secondary" href="{{ url_for('web.campaign_preview', campaign_id=campaign.id) }}">Gespeicherte Vorschau</a>{% endif %}</div>
+</form>
+{% if not locked %}
+<template id="field-template">{% set field = {'id': '', 'label': '', 'field_type': 'text', 'required': '0', 'description': ''} %}{% include 'field_editor.html' %}</template>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Anmelden · Campaign Action{% endblock %}
+{% block main_class %}container narrow{% endblock %}
+{% block content %}
+<div class="page-heading"><p class="eyebrow">VERWALTUNG</p><h1>Willkommen zurück</h1><p class="muted">Melden Sie sich an, um Ihre Campaigns zu verwalten.</p></div>
+<section class="card">
+  {% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Benutzername<input name="username" autocomplete="username" required autofocus></label>
+    <label>Passwort<input type="password" name="password" autocomplete="current-password" required></label>
+    <button type="submit" class="button primary">Anmelden</button>
+  </form>
+</section>
+{% endblock %}

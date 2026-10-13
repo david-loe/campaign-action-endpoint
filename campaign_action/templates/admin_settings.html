@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}Admin-Einstellungen · Campaign Action{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('web.campaigns') }}">← Alle Campaigns</a>
+<div class="page-heading"><p class="eyebrow">VERWALTUNG</p><h1>Admin-Einstellungen</h1><p class="muted">Verbinden Sie eine Listmonk-Instanz für direkte Imports und Link-Updates.</p></div>
+{% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+<section class="card stack"><h2>Listmonk</h2><form method="post" class="stack" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Instanz-URL<input type="url" name="base_url" value="{{ values.base_url }}" placeholder="https://listmonk.example.com" required maxlength="2000"><span class="help">Die Basis-URL ohne /api. Interne Docker-Adressen mit HTTP sind möglich.</span></label>
+  <label>API-Benutzername<input name="username" value="{{ values.username }}" maxlength="200" required autocomplete="off"></label>
+  <label>API-Token<input type="password" name="token" autocomplete="new-password" maxlength="4096" placeholder="{{ 'Leer lassen, um den gespeicherten Token zu behalten' if config and config.token else 'API-Token eingeben' }}"><span class="help">Bei Änderung von URL oder Benutzername ist ein neuer Token erforderlich. Der gespeicherte Token wird nicht angezeigt.</span></label>
+  <label class="check-label"><input type="checkbox" name="enabled" value="1" {% if values.enabled %}checked{% endif %}>Listmonk-Verbindung aktivieren</label>
+  <button class="button primary" type="submit">Einstellungen speichern</button>
+</form>
+{% if config and config.enabled %}<form method="post" action="{{ url_for('listmonk.test_connection') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button secondary">Verbindung testen</button></form>{% endif %}
+<p class="help">Imports lesen Subscribers der ausgewählten Liste. Exporte ergänzen Links bei vorhandenen Subscribers; Status und Mitgliedschaften bleiben erhalten. Änderungen der Verbindung stoppen ältere Transfer-Vorgänge.</p>
+{% if config and config.token %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="remove"><button class="button danger subtle">Listmonk-Konfiguration entfernen</button></form>{% endif %}
+</section>
+{% endblock %}

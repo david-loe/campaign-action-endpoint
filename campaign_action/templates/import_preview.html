@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Importvorschau · Campaign Action{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('web.import_csv', campaign_id=campaign.id) }}">← Andere Datei auswählen</a>
+<div class="page-heading"><p class="eyebrow">{{ campaign.name }}</p><h1>Importvorschau</h1><p class="muted">{{ total }} gültige Zeilen · {{ duplicates }} Dubletten · {{ job.errors|length }} Fehler</p></div>
+{% if job.errors %}<section class="notice error" role="alert"><h2>Bitte korrigieren Sie die Datei</h2><p>Die Datei wird mit diesen Fehlern nicht übernommen.</p><ul>{% for error in job.errors[:100] %}<li>{{ error }}</li>{% endfor %}</ul>{% if job.errors|length > 100 %}<p>Es werden die ersten 100 Fehler angezeigt.</p>{% endif %}</section>{% endif %}
+<section class="card table-card"><div class="table-scroll"><table><thead><tr><th>CSV-Zeile</th><th>Identität</th><th>Name</th><th>E-Mail</th><th>Übernahme</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.line }}</td><td class="identity">{{ row.identity }}</td><td>{{ row.name or '—' }}</td><td>{{ row.email or '—' }}</td><td><span class="badge {{ 'neutral' if row.duplicate else 'success' }}">{{ 'Dubletten überspringen' if row.duplicate else 'Neu importieren' }}</span></td></tr>{% else %}<tr><td colspan="5">Keine gültigen Zeilen.</td></tr>{% endfor %}</tbody></table></div></section>
+{% if total > 100 %}<p class="help">Es werden die ersten 100 gültigen Zeilen angezeigt. Die Übernahme umfasst die gesamte Datei.</p>{% endif %}
+<form method="post" class="actions"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary" {% if job.errors %}disabled{% endif %}>{{ total - duplicates }} Empfänger importieren</button><a class="button secondary" href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">Abbrechen</a></form>
+<p class="help">Diese Vorschau ist eine Stunde gültig. Dubletten werden bei der Übernahme erneut geprüft.</p>
+{% endblock %}
