@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from PIL import Image
 from playwright.sync_api import sync_playwright
 from werkzeug.serving import WSGIRequestHandler, make_server
 
@@ -50,8 +51,18 @@ def main():
                 page.get_by_label("Passwort").fill(password)
                 page.get_by_role("button", name="Anmelden", exact=True).click()
                 page.wait_for_url("**/admin/campaigns")
+                page.get_by_role("link", name="Admin-Einstellungen", exact=True).click()
+                logo = io.BytesIO()
+                Image.new("RGB", (160, 48), color="#4b267d").save(logo, format="PNG")
+                page.get_by_label("Akzentfarbe (Hex)").fill("#4b267d")
+                assert page.get_by_label("Akzentfarbe auswählen", exact=True).input_value() == "#4b267d"
+                page.get_by_label("Logo hochladen").set_input_files({"name": "logo.png", "mimeType": "image/png",
+                                                                               "buffer": logo.getvalue()})
+                page.get_by_role("button", name="Branding speichern", exact=True).click()
+                assert page.locator(".branding-logo-preview").evaluate("image => image.complete && image.naturalWidth === 160")
+                page.get_by_role("link", name="Campaigns", exact=True).click()
                 page.get_by_role("link", name="+ Neue Campaign").click()
-                page.get_by_label("Campaign-Name").fill("Herbstkampagne 2026")
+                page.get_by_label("Campaign-Name", exact=True).fill("Herbstkampagne 2026")
                 page.get_by_label("Formular aktivieren", exact=True).check()
                 page.get_by_label("Bestätigungstext bereits über dem offenen Formular anzeigen").check()
                 page.locator('textarea[name="confirmation_text"]').fill("Vielen Dank für Ihre Teilnahme!")
@@ -79,9 +90,17 @@ def main():
                 if args.screenshots:
                     page.screenshot(path=str(args.screenshots / "admin.png"), full_page=True)
                 mobile = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+                mobile.add_init_script("""window.cspViolations = [];
+                    document.addEventListener('securitypolicyviolation', event => window.cspViolations.push(event.violatedDirective));""")
                 recipient = mobile.new_page()
                 recipient.on("pageerror", lambda error: errors.append(str(error)))
                 recipient.goto(rows[0]["link"])
+                assert recipient.locator(".public-logo").evaluate("image => image.complete && image.naturalWidth === 160")
+                assert recipient.locator(".primary").evaluate("button => getComputedStyle(button).backgroundColor") == "rgb(75, 38, 125)"
+                assert recipient.get_by_text("Herbstkampagne 2026", exact=True).is_visible()
+                assert "Campaign Action" not in recipient.locator("body").inner_text()
+                assert "Ihre Rückmeldung" not in recipient.locator("body").inner_text()
+                assert recipient.evaluate("window.cspViolations.length === 0"), "Public page CSP violation"
                 assert recipient.get_by_text("Vielen Dank für Ihre Teilnahme!", exact=True).is_visible()
                 assert recipient.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Mobile overflow"
                 if args.screenshots:
@@ -92,6 +111,10 @@ def main():
                 recipient.get_by_label("Anzahl Gäste").fill("2")
                 recipient.get_by_role("button", name="Jetzt bestätigen").click()
                 assert recipient.get_by_text("Ihre Angaben wurden gespeichert. Die Abgabe ist abgeschlossen.").is_visible()
+                assert recipient.get_by_text("Bestätigung erfolgreich", exact=True).is_visible()
+                assert recipient.locator(".completion-mark svg path").evaluate("path => getComputedStyle(path).stroke") == "rgb(21, 117, 82)"
+                if args.screenshots:
+                    recipient.screenshot(path=str(args.screenshots / "public-confirmed.png"), full_page=True)
                 recipient.reload()
                 assert recipient.locator("form").count() == 0
                 page.goto(campaign_url)
@@ -103,6 +126,24 @@ def main():
                 page.get_by_role("link", name="Einstellungen", exact=True).click()
                 assert page.locator("#add-field").count() == 0
                 assert page.locator('select[name="confirmation_mode"]').count() == 0
+                page.get_by_label("Branding verwenden").select_option("custom")
+                page.get_by_label("Akzentfarbe (Hex)").fill("#ffcc00")
+                page.get_by_label("Campaign-Name auf der Bestätigungsseite anzeigen", exact=True).uncheck()
+                page.get_by_role("button", name="Campaign speichern", exact=True).click()
+                preview = context.new_page()
+                preview.goto(campaign_url + "/preview")
+                assert preview.locator(".public-logo").count() == 0
+                assert preview.title() == "Bestätigung"
+                assert preview.locator(".primary").evaluate("button => getComputedStyle(button).backgroundColor") == "rgb(255, 204, 0)"
+                assert preview.locator(".primary").evaluate("button => getComputedStyle(button).color") == "rgb(0, 0, 0)"
+                if args.screenshots:
+                    preview.screenshot(path=str(args.screenshots / "public-desktop-custom.png"), full_page=True)
+                preview.close()
+                recipient.reload()
+                assert recipient.locator(".public-logo").count() == 0
+                assert recipient.title() == "Bestätigung"
+                assert recipient.get_by_text("Herbstkampagne 2026", exact=True).count() == 0
+                assert recipient.evaluate("window.cspViolations.length === 0"), "Custom branding CSP violation"
                 page.get_by_role("link", name="Admin-Einstellungen", exact=True).click()
                 page.locator('input[name="base_url"]').fill(api.url)
                 page.locator('input[name="username"]').fill(api.username)
@@ -138,7 +179,7 @@ def main():
                 assert mobile_admin.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Mobile admin overflow"
                 assert not errors, errors
                 browser.close()
-                print("Browser smoke passed: admin, CSV/forms, mobile layout, Listmonk settings, API import and export with browser-driven steps.")
+                print("Browser smoke passed: global/custom branding, logo upload, CSP, CSV/forms, mobile layout, Listmonk import and export.")
         finally:
             server.shutdown()
             thread.join(timeout=5)

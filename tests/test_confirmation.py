@@ -16,6 +16,7 @@ def test_confirmation_modes(app, factory, mode, form):
     client = app.test_client()
     page = client.get(item["path"])
     assert page.status_code == 200
+    assert ("Bestätigung erfolgreich" in page.text) == (mode == "visit" and not form)
     with app.app_context():
         recipient = db.session.get(Recipient, item["recipient_id"])
         assert (recipient.confirmed_at is not None) == (mode == "visit")
@@ -28,6 +29,7 @@ def test_confirmation_modes(app, factory, mode, form):
         result = client.post(item["path"], data=data, follow_redirects=True)
         assert result.status_code == 200
         assert "Eigener Bestätigungstext" in result.text
+        assert "Bestätigung erfolgreich" in result.text
     with app.app_context():
         recipient = db.session.get(Recipient, item["recipient_id"])
         assert recipient.confirmed_at is not None

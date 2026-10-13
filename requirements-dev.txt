@@ -63,6 +63,8 @@ packaging==26.3
     # via
     #   gunicorn
     #   pytest
+pillow==12.3.0
+    # via campaign-action-endpoint (pyproject.toml)
 pluggy==1.6.0
     # via pytest
 pycparser==3.11

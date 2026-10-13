@@ -59,6 +59,8 @@ markupsafe==3.0.4
     #   wtforms
 packaging==26.3
     # via gunicorn
+pillow==12.3.0
+    # via campaign-action-endpoint (pyproject.toml)
 pycparser==3.11
     # via cffi
 python-dotenv==1.2.4

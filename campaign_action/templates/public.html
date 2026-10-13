@@ -1,18 +1,26 @@
 {% extends 'base.html' %}
-{% block title %}{{ campaign.name }}{% endblock %}
-{% block header %}<header class="public-header"><span class="brand-mark" aria-hidden="true">✓</span><span>Campaign Action</span></header>{% endblock %}
+{% block title %}{{ campaign.name if campaign.show_campaign_name else 'Bestätigung' }}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('web.public_branding_css', campaign_uuid=campaign.uuid) }}">{% endblock %}
+{% block body_class %}public-page{% endblock %}
+{% block header %}{% if branding.has_logo %}<header class="public-header"><img class="public-logo" src="{{ url_for('web.public_logo', campaign_uuid=campaign.uuid) }}" alt="Logo"></header>{% endif %}{% endblock %}
+{% block footer %}{% endblock %}
 {% block main_class %}container public-container{% endblock %}
 {% block content %}
 {% if preview %}<div class="notice">Vorschau – es wird keine Bestätigung oder Formularabgabe gespeichert. <a href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) }}">Zurück zur Campaign</a></div>{% endif %}
 <section class="card public-card stack">
-  <p class="eyebrow">{{ campaign.name }}</p>
+  {% if campaign.show_campaign_name %}<p class="eyebrow">{{ campaign.name }}</p>{% endif %}
   {% if complete %}
-    <span class="completion-mark" aria-hidden="true">✓</span><h1>Vielen Dank!</h1><p class="confirmation-text">{{ campaign.confirmation_text }}</p>
+    <div class="confirmation-result" role="status">
+      <span class="completion-mark" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" focusable="false"><path d="M12 25l8 8 17-18" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <p class="confirmation-success">Bestätigung erfolgreich</p>
+      <h1>Vielen Dank!</h1>
+    </div>
+    <p class="confirmation-text">{{ campaign.confirmation_text }}</p>
     {% if campaign.form_enabled %}<p class="muted">Ihre Angaben wurden gespeichert. Die Abgabe ist abgeschlossen.</p>{% else %}<p class="muted">{{ 'Ihre Bestätigung wird beim Linkaufruf gespeichert.' if preview else 'Ihre Bestätigung wurde gespeichert.' }}</p>{% endif %}
   {% else %}
-    <h1>{{ 'Ihre Rückmeldung' if campaign.form_enabled else 'Bitte bestätigen' }}</h1>
+    {% if campaign.form_enabled %}<h1 class="sr-only">Bestätigungsformular</h1>{% else %}<h1>Bitte bestätigen</h1>{% endif %}
     {% if campaign.form_enabled and campaign.show_text_with_form %}<p class="confirmation-text">{{ campaign.confirmation_text }}</p>{% endif %}
-    {% if campaign.confirmation_mode == 'visit' and campaign.form_enabled %}<div class="notice success">Ihre Bestätigung {{ 'wird beim Linkaufruf gespeichert' if preview else 'wurde gespeichert' }}. Bitte ergänzen Sie Ihre Angaben im Formular.</div>{% elif campaign.form_enabled %}<p class="muted">Füllen Sie das Formular aus, um Ihre Bestätigung abzugeben.</p>{% else %}<p class="muted">Klicken Sie auf den Button, um Ihre Bestätigung abzugeben.</p>{% endif %}
+    {% if campaign.form_enabled and campaign.confirmation_mode != 'visit' %}<p class="muted">Füllen Sie das Formular aus, um Ihre Bestätigung abzugeben.</p>{% elif not campaign.form_enabled %}<p class="muted">Klicken Sie auf den Button, um Ihre Bestätigung abzugeben.</p>{% endif %}
     {% if errors %}<div class="notice error" role="alert">Bitte prüfen Sie die markierten Felder.</div>{% endif %}
     <form method="post" {% if not preview %}action="{{ url_for('web.public_confirmation', token=token) }}"{% endif %} class="stack">
       {% if not preview %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}

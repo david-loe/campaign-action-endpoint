@@ -1,0 +1,6 @@
+<div class="form-grid" data-color-control>
+  <label>Akzentfarbe auswählen<input type="color" value="{{ branding_fields_values.accent_color }}" data-color-picker></label>
+  <label>Akzentfarbe (Hex)<input name="accent_color" value="{{ branding_fields_values.accent_color }}" placeholder="#2359dc" pattern="#[0-9a-fA-F]{6}" maxlength="7" required data-color-hex><span class="help">Format: #RRGGBB.</span></label>
+</div>
+{% if branding_logo_url %}<img class="branding-logo-preview" src="{{ branding_logo_url }}" alt="Gespeichertes Logo"><label class="check-label"><input type="checkbox" name="remove_logo" value="1">Gespeichertes Logo entfernen</label>{% endif %}
+<label>Logo hochladen<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"><span class="help">PNG, JPEG oder WebP. Maximal 2 MiB und 4096 × 4096 Pixel. Ohne Upload bleibt ein gespeichertes Logo erhalten.</span></label>

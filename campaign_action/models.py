@@ -28,6 +28,11 @@ class Campaign(db.Model):
     confirmation_text = db.Column(db.Text, nullable=False, default="Vielen Dank für Ihre Bestätigung.")
     form_enabled = db.Column(db.Boolean, nullable=False, default=False)
     show_text_with_form = db.Column(db.Boolean, nullable=False, default=False)
+    show_campaign_name = db.Column(db.Boolean, nullable=False, default=True)
+    branding_mode = db.Column(db.String(10), nullable=False, default="global")
+    accent_color = db.Column(db.String(7), nullable=False, default="#2359dc")
+    logo_data = db.deferred(db.Column(db.LargeBinary))
+    logo_mime = db.Column(db.String(30))
     active = db.Column(db.Boolean, nullable=False, default=True)
     locked_at = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
@@ -86,6 +91,13 @@ class LoginAttempt(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     address_hash = db.Column(db.String(64), nullable=False, index=True)
     attempted_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+
+
+class BrandingConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    accent_color = db.Column(db.String(7), nullable=False, default="#2359dc")
+    logo_data = db.deferred(db.Column(db.LargeBinary))
+    logo_mime = db.Column(db.String(30))
 
 
 class ListmonkConfig(db.Model):

@@ -101,7 +101,7 @@ def create_app(config=None):
 
     @app.errorhandler(413)
     def too_large(_):
-        return render_template("error.html", message="Die Datei ist zu groß. Bitte verwenden Sie eine CSV-Datei mit weniger als 10 MiB."), 413
+        return render_template("error.html", message="Die Anfrage ist zu groß. Dateien dürfen insgesamt höchstens 10 MiB umfassen."), 413
 
     @app.errorhandler(404)
     def not_found(_):

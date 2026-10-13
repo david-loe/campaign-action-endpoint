@@ -90,6 +90,10 @@ def test_migration_preserves_legacy_links_recipients_and_answers(tmp_path):
         assert recipient.submission.answers == {"1": "Preserved answer"}
         assert recipient.campaign.fields[0].label == "Name"
         assert recipient.campaign.secret
+        assert recipient.campaign.show_campaign_name
+        assert recipient.campaign.branding_mode == "global"
+        assert recipient.campaign.accent_color == "#2359dc"
+        assert recipient.campaign.logo_data is None
         assert db.session.execute(sa.text("PRAGMA foreign_key_check")).fetchall() == []
         db.session.remove()
         db.engine.dispose()

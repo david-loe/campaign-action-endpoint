@@ -9,7 +9,9 @@ from flask import Blueprint, Response, abort, current_app, flash, redirect, rend
 from sqlalchemy import func, or_, text
 from werkzeug.security import check_password_hash
 
-from .models import Campaign, FormField, ImportJob, LoginAttempt, ListmonkConfig, Recipient, Submission, TransferJob, db, utcnow
+from .branding import (DEFAULT_ACCENT, apply_logo, branding_css, effective_branding, global_branding,
+                       public_branding, read_logo, validate_color)
+from .models import BrandingConfig, Campaign, FormField, ImportJob, LoginAttempt, ListmonkConfig, Recipient, Submission, TransferJob, db, utcnow
 from .services import (FIELD_TYPES, LISTMONK_COLUMNS, annotate_import, begin_write, confirm,
                        confirmation_link, csv_bytes, decode_token, iso_date, listmonk_values,
                        parse_csv, token_recipient, validate_answers)
@@ -115,18 +117,30 @@ def settings_values(campaign=None, form=None):
         return {"name": form.get("name", ""), "identity_type": form.get("identity_type", "email"),
                 "key_column": form.get("key_column", "key"), "confirmation_mode": form.get("confirmation_mode", "action"),
                 "confirmation_text": form.get("confirmation_text", ""), "form_enabled": form.get("form_enabled") == "1",
+                "show_campaign_name": form.get("show_campaign_name") == "1",
+                "branding_mode": form.get("branding_mode", "global"),
+                "accent_color": form.get("accent_color", campaign.accent_color if campaign else DEFAULT_ACCENT),
                 "show_text_with_form": form.get("show_text_with_form") == "1", "active": form.get("active") == "1", "fields": fields}
     if campaign:
         return {key: getattr(campaign, key) for key in ("name", "identity_type", "key_column", "confirmation_mode",
-                "confirmation_text", "form_enabled", "show_text_with_form", "active")} | {
+                "confirmation_text", "form_enabled", "show_text_with_form", "active", "show_campaign_name", "branding_mode", "accent_color")} | {
                 "fields": [{"id": str(f.id), "label": f.label, "field_type": f.field_type,
                             "required": "1" if f.required else "0", "description": f.description} for f in campaign.fields]}
     return {"name": "", "identity_type": "email", "key_column": "key", "confirmation_mode": "action",
             "confirmation_text": "Vielen Dank für Ihre Bestätigung.", "form_enabled": False,
-            "show_text_with_form": False, "active": True, "fields": []}
+            "show_text_with_form": False, "active": True, "show_campaign_name": True,
+            "branding_mode": "global", "accent_color": DEFAULT_ACCENT, "fields": []}
 
 
 def apply_settings(campaign, values, form):
+    if values["branding_mode"] not in ("global", "custom"):
+        raise ValueError("Ungültiger Branding-Modus.")
+    # Switching back to global branding keeps the campaign's own settings.
+    if values["branding_mode"] == "custom":
+        values["accent_color"] = validate_color(values["accent_color"])
+        logo = read_logo(request.files.get("logo"))
+    else:
+        values["accent_color"] = campaign.accent_color or DEFAULT_ACCENT
     if not 1 <= len(values["name"].strip()) <= 200:
         raise ValueError("Der Campaign-Name muss 1 bis 200 Zeichen enthalten.")
     if values["identity_type"] not in ("email", "key") or values["confirmation_mode"] not in ("visit", "action"):
@@ -159,6 +173,8 @@ def apply_settings(campaign, values, form):
             raise ValueError("Felder benötigen eine Bezeichnung mit höchstens 200 Zeichen und eine Beschreibung mit höchstens 2.000 Zeichen.")
         if field["field_type"] not in FIELD_TYPES or field["required"] not in ("0", "1"):
             raise ValueError("Ungültiger Feldtyp oder Pflichtfeld-Einstellung.")
+    if values["branding_mode"] == "custom":
+        apply_logo(campaign, logo, form.get("remove_logo") == "1")
     for key, value in values.items():
         if key != "fields":
             setattr(campaign, key, value.strip() if isinstance(value, str) else value)
@@ -228,7 +244,9 @@ def campaign_duplicate(campaign_id):
     original = campaign_or_404(campaign_id)
     copy = Campaign(name=original.name[:190] + " (Kopie)", identity_type=original.identity_type, key_column=original.key_column,
                     confirmation_mode=original.confirmation_mode, confirmation_text=original.confirmation_text,
-                    form_enabled=original.form_enabled, show_text_with_form=original.show_text_with_form, active=True)
+                    form_enabled=original.form_enabled, show_text_with_form=original.show_text_with_form, active=True,
+                    show_campaign_name=original.show_campaign_name, branding_mode=original.branding_mode,
+                    accent_color=original.accent_color, logo_data=original.logo_data, logo_mime=original.logo_mime)
     copy.fields = [FormField(label=f.label, field_type=f.field_type, required=f.required, description=f.description, position=f.position) for f in original.fields]
     db.session.add(copy)
     db.session.commit()
@@ -407,7 +425,8 @@ def export_results(campaign_id):
 def campaign_preview(campaign_id):
     campaign = campaign_or_404(campaign_id)
     return render_template("public.html", campaign=campaign, recipient=None, token=None, preview=True,
-                           complete=campaign.confirmation_mode == "visit" and not campaign.form_enabled, errors={}, values={})
+                           complete=campaign.confirmation_mode == "visit" and not campaign.form_enabled, errors={}, values={},
+                           branding=public_branding(campaign))
 
 
 @bp.route("/r/<token>", methods=["GET", "POST"])
@@ -441,4 +460,64 @@ def public_confirmation(token):
         db.session.commit()
     complete = recipient.submission is not None if campaign.form_enabled else recipient.confirmed_at is not None
     return render_template("public.html", campaign=campaign, recipient=recipient, token=token, preview=False,
-                           complete=complete, errors=errors, values=values), status
+                           complete=complete, errors=errors, values=values, branding=public_branding(campaign)), status
+
+
+@bp.post("/admin/settings/branding")
+@admin_required
+def branding_settings():
+    from .listmonk_views import render_admin_settings
+
+    begin_write()
+    branding = global_branding()
+    try:
+        color = validate_color(request.form.get("accent_color", ""))
+        logo = read_logo(request.files.get("logo"))
+        if branding is None:
+            branding = BrandingConfig(id=1)
+            db.session.add(branding)
+        apply_logo(branding, logo, request.form.get("remove_logo") == "1")
+        branding.accent_color = color
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return render_admin_settings(branding_values={"accent_color": request.form.get("accent_color", "")},
+                                     branding_error=str(exc)), 400
+    flash("Das globale Branding wurde gespeichert.", "success")
+    return redirect(url_for("listmonk.settings"))
+
+
+def logo_response(branding):
+    if branding is None or not branding.logo_data:
+        abort(404)
+    return Response(branding.logo_data, mimetype=branding.logo_mime)
+
+
+@bp.get("/admin/settings/branding/logo")
+@admin_required
+def global_logo():
+    return logo_response(global_branding())
+
+
+@bp.get("/admin/campaigns/<int:campaign_id>/branding/logo")
+@admin_required
+def campaign_logo(campaign_id):
+    return logo_response(campaign_or_404(campaign_id))
+
+
+def branding_campaign(campaign_uuid):
+    campaign = db.session.scalar(db.select(Campaign).where(Campaign.uuid == campaign_uuid))
+    if campaign is None or (not campaign.active and session.get("admin") != current_app.config["ADMIN_USERNAME"]):
+        abort(404)
+    return campaign
+
+
+@bp.get("/branding/<campaign_uuid>/logo")
+def public_logo(campaign_uuid):
+    return logo_response(effective_branding(branding_campaign(campaign_uuid)))
+
+
+@bp.get("/branding/<campaign_uuid>/style.css")
+def public_branding_css(campaign_uuid):
+    branding = public_branding(branding_campaign(campaign_uuid))
+    return Response(branding_css(branding["accent_color"]), mimetype="text/css")

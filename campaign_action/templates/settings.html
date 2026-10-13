@@ -1,16 +1,17 @@
 {% extends 'base.html' %}
 {% block title %}{{ 'Einstellungen' if campaign else 'Neue Campaign' }} · Campaign Action{% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='settings.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='settings.js') }}" defer></script><script src="{{ url_for('static', filename='branding.js') }}" defer></script>{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ url_for('web.campaign_detail', campaign_id=campaign.id) if campaign else url_for('web.campaigns') }}">← Zurück</a>
 <div class="page-heading"><p class="eyebrow">CAMPAIGN</p><h1>{{ 'Einstellungen' if campaign else 'Neue Campaign' }}</h1><p class="muted">Bestätigungsablauf und Formular an einem Ort.</p></div>
 {% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
 {% set locked = campaign and campaign.locked_at %}
 {% if locked %}<div class="notice">Die erste Bestätigung oder Abgabe ist eingegangen. Modus und Formularstruktur sind jetzt festgeschrieben. Texte können Sie weiter bearbeiten.</div>{% endif %}
-<form method="post" class="stack" id="settings-form">
+<form method="post" enctype="multipart/form-data" class="stack" id="settings-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <section class="card stack"><h2>Allgemein</h2>
     <label>Campaign-Name<input name="name" value="{{ values.name }}" maxlength="200" required autofocus></label>
+    <label class="check-label"><input type="checkbox" name="show_campaign_name" value="1" {% if values.show_campaign_name %}checked{% endif %}>Campaign-Name auf der Bestätigungsseite anzeigen</label>
     <div class="form-grid">
       <label>Empfänger identifizieren über
         {% if identity_locked %}<input type="hidden" name="identity_type" value="{{ values.identity_type }}">{% endif %}
@@ -20,6 +21,15 @@
       <label>Standard-CSV-Spalte für eigenen Key<input name="key_column" value="{{ values.key_column }}" maxlength="200" required><span class="help">Beim Import einer Key-Campaign auswählbar.</span></label>
     </div>
     <label class="check-label"><input type="checkbox" name="active" value="1" {% if values.active %}checked{% endif %}>Campaign aktiv – persönliche Links sind erreichbar</label>
+  </section>
+  <section class="card stack"><h2>Branding</h2>
+    <label>Branding verwenden<select name="branding_mode" id="branding-mode"><option value="global" {% if values.branding_mode == 'global' %}selected{% endif %}>Globales Branding verwenden</option><option value="custom" {% if values.branding_mode == 'custom' %}selected{% endif %}>Eigenes Branding</option></select></label>
+    <p class="help">Eigenes Branding ersetzt das globale Logo und die globale Akzentfarbe vollständig. Ohne eigenes Logo wird kein Logo angezeigt.</p>
+    <fieldset class="branding-fields stack" id="custom-branding"><legend class="sr-only">Eigenes Branding</legend>
+      {% set branding_fields_values = values %}
+      {% set branding_logo_url = url_for('web.campaign_logo', campaign_id=campaign.id) if campaign and campaign.logo_mime else none %}
+      {% include 'branding_fields.html' %}
+    </fieldset>
   </section>
   <section class="card stack"><h2>Bestätigung</h2>
     <label>Bestätigung speichern

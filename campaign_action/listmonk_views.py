@@ -1,6 +1,7 @@
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import case
 
+from .branding import DEFAULT_ACCENT, global_branding
 from .crypto import encrypt_value
 from .listmonk import ListmonkError, validate_base_url
 from .models import ListmonkConfig, Recipient, TransferItem, TransferJob, db
@@ -11,6 +12,18 @@ from .views import admin_required, campaign_or_404
 bp = Blueprint("listmonk", __name__)
 STATUS_LABELS = {"loading": "Subscribers laden", "preview": "Import prüfen", "ready": "Export prüfen", "running": "Links übertragen",
                  "done": "Abgeschlossen", "partial": "Teilweise abgeschlossen", "failed": "Unterbrochen", "stopped": "Gestoppt"}
+
+
+def render_admin_settings(config=None, values=None, error=None, branding_values=None, branding_error=None):
+    if config is None:
+        config = db.session.get(ListmonkConfig, 1)
+    if values is None:
+        values = {"base_url": config.base_url if config else "", "username": config.username if config else "",
+                  "enabled": bool(config and config.enabled)}
+    branding = global_branding()
+    return render_template("admin_settings.html", config=config, values=values, error=error, branding_config=branding,
+                           branding_values=branding_values or {"accent_color": branding.accent_color if branding else DEFAULT_ACCENT},
+                           branding_error=branding_error)
 
 
 def configured():
@@ -74,7 +87,7 @@ def settings():
     values = {"base_url": config.base_url if config else "", "username": config.username if config else "", "enabled": bool(config and config.enabled)}
     if request.method == "POST" and error:
         values.update(base_url=request.form.get("base_url", ""), username=request.form.get("username", ""), enabled=request.form.get("enabled") == "1")
-    return render_template("admin_settings.html", config=config, values=values, error=error), 400 if error else 200
+    return render_admin_settings(config=config, values=values, error=error), 400 if error else 200
 
 
 @bp.post("/admin/settings/listmonk/test")

@@ -1,10 +1,22 @@
 {% extends 'base.html' %}
 {% block title %}Admin-Einstellungen · Campaign Action{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='branding.js') }}" defer></script>{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ url_for('web.campaigns') }}">← Alle Campaigns</a>
-<div class="page-heading"><p class="eyebrow">VERWALTUNG</p><h1>Admin-Einstellungen</h1><p class="muted">Verbinden Sie eine Listmonk-Instanz für direkte Imports und Link-Updates.</p></div>
+<div class="page-heading"><p class="eyebrow">VERWALTUNG</p><h1>Admin-Einstellungen</h1><p class="muted">Branding für Bestätigungsseiten und Ihre Listmonk-Verbindung verwalten.</p></div>
+<section class="card stack"><h2>Globales Branding</h2>
+  <p class="help">Campaigns mit globalem Branding übernehmen dieses Logo und diese Akzentfarbe. Änderungen gelten auch für bestehende Links.</p>
+  {% if branding_error %}<div class="notice error" role="alert">{{ branding_error }}</div>{% endif %}
+  <form method="post" action="{{ url_for('web.branding_settings') }}" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% set branding_fields_values = branding_values %}
+    {% set branding_logo_url = url_for('web.global_logo') if branding_config and branding_config.logo_mime else none %}
+    {% include 'branding_fields.html' %}
+    <button class="button primary" type="submit">Branding speichern</button>
+  </form>
+</section>
 {% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
-<section class="card stack"><h2>Listmonk</h2><form method="post" class="stack" autocomplete="off">
+<section class="card stack"><h2>Listmonk</h2><form method="post" action="{{ url_for('listmonk.settings') }}" class="stack" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Instanz-URL<input type="url" name="base_url" value="{{ values.base_url }}" placeholder="https://listmonk.example.com" required maxlength="2000"><span class="help">Die Basis-URL ohne /api. Interne Docker-Adressen mit HTTP sind möglich.</span></label>
   <label>API-Benutzername<input name="username" value="{{ values.username }}" maxlength="200" required autocomplete="off"></label>
@@ -14,6 +26,6 @@
 </form>
 {% if config and config.enabled %}<form method="post" action="{{ url_for('listmonk.test_connection') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button secondary">Verbindung testen</button></form>{% endif %}
 <p class="help">Imports lesen Subscribers der ausgewählten Liste. Exporte ergänzen Links bei vorhandenen Subscribers; Status und Mitgliedschaften bleiben erhalten. Änderungen der Verbindung stoppen ältere Transfer-Vorgänge.</p>
-{% if config and config.token %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="remove"><button class="button danger subtle">Listmonk-Konfiguration entfernen</button></form>{% endif %}
+{% if config and config.token %}<form method="post" action="{{ url_for('listmonk.settings') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="remove"><button class="button danger subtle">Listmonk-Konfiguration entfernen</button></form>{% endif %}
 </section>
 {% endblock %}

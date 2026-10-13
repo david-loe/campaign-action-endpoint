@@ -67,10 +67,11 @@ def settings_data(app, campaign_id, **changes):
         campaign = db.session.get(Campaign, campaign_id)
         data = {"name": campaign.name, "identity_type": campaign.identity_type, "key_column": campaign.key_column,
                 "confirmation_mode": campaign.confirmation_mode, "confirmation_text": campaign.confirmation_text,
+                "branding_mode": campaign.branding_mode, "accent_color": campaign.accent_color,
                 "field_id": [str(f.id) for f in campaign.fields], "field_label": [f.label for f in campaign.fields],
                 "field_type": [f.field_type for f in campaign.fields], "field_required": ["1" if f.required else "0" for f in campaign.fields],
                 "field_description": [f.description for f in campaign.fields]}
-        for key in ("active", "form_enabled", "show_text_with_form"):
+        for key in ("active", "form_enabled", "show_text_with_form", "show_campaign_name"):
             if getattr(campaign, key):
                 data[key] = "1"
     data.update(changes)
