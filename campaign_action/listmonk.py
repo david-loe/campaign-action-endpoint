@@ -83,7 +83,9 @@ class ListmonkClient:
     def lists(self):
         lists = []
         for page in range(1, 101):
-            rows, total = self.page("api/lists", status="active", page=page, per_page=PAGE_SIZE, minimal="true")
+            # minimal=true returns a plain array instead of the paginated
+            # results/total envelope used by this client.
+            rows, total = self.page("api/lists", status="active", page=page, per_page=PAGE_SIZE)
             lists.extend(row for row in rows if row.get("status", "active") == "active")
             if page * PAGE_SIZE >= total or not rows:
                 return lists

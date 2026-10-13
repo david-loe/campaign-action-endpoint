@@ -69,6 +69,9 @@ class ListmonkTestServer:
                     state.requests.append(("GET", self.path, None))
                     if parts.path == "/api/lists":
                         rows = [copy.deepcopy(row) for row in state.lists.values() if row["status"] == query.get("status", [row["status"]])[0]]
+                        if query.get("minimal") == ["true"]:
+                            self.respond(200, {"data": rows})
+                            return
                     elif parts.path.startswith("/api/lists/"):
                         row = state.lists.get(int(parts.path.rsplit("/", 1)[1]))
                         self.respond(200 if row else 404, {"data": row})

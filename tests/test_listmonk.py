@@ -2,11 +2,13 @@ import copy
 import threading
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
 
 from campaign_action.crypto import decrypt_value
+from campaign_action.listmonk import ListmonkClient
 from campaign_action.models import Campaign, ListmonkConfig, Recipient, TransferItem, TransferJob, db, utcnow
 from campaign_action.transfers import counts
 from scripts.listmonk_test_server import ListmonkTestServer
@@ -69,6 +71,21 @@ def test_settings_encryption_test_and_token_retention(app, client, api):
     assert configure(client, api, base_url="http://localhost:9999", token="").status_code == 400
     assert configure(client, api, base_url="https://user:pass@example.com").status_code == 400
     assert configure(client, api, base_url="https://example.com:bad").status_code == 400
+
+
+@pytest.mark.parametrize("total", [0, 2, 103])
+def test_list_discovery_uses_paginated_response_instead_of_minimal_array(api, total):
+    api.lists = {index: {"id": index, "name": f"List {index}", "status": "active"} for index in range(1, total + 1)}
+    api.lists[total + 1] = {"id": total + 1, "name": "Archived", "status": "archived"}
+    with ListmonkClient(api.url, api.username, api.token) as connection:
+        # Mirror the response shape observed from the running Listmonk instance.
+        minimal = connection.request("GET", "api/lists", params={"status": "active", "minimal": "true"})
+        assert isinstance(minimal, list) and len(minimal) == total
+        rows = connection.lists()
+    assert [row["id"] for row in rows] == list(range(1, total + 1))
+    requests = [parse_qs(urlsplit(path).query) for method, path, _ in api.requests if method == "GET" and "minimal" not in parse_qs(urlsplit(path).query)]
+    expected_pages = [["1"], ["2"]] if total > 100 else [["1"]]
+    assert [query["page"] for query in requests] == expected_pages
 
 
 def test_listmonk_options_and_authentication(client, app, factory, api):
