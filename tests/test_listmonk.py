@@ -1,4 +1,5 @@
 import copy
+import re
 import threading
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -115,6 +116,143 @@ def test_import_preview_and_atomic_commit(app, client, factory, api):
         assert anna.attributes["city"] == "Köln" and anna.source["status"] == "blocklisted"
         assert anna.confirmed_at is None
     assert not any(method == "PATCH" for method, _, _ in api.requests)
+
+
+@pytest.mark.parametrize("total", [0, 100, 101, 1719])
+def test_import_loads_every_subscriber_with_identical_timestamps(app, client, factory, api, total):
+    configure(client, api)
+    api.subscribers.clear()
+    api.unstable_subscriber_ties = True
+    for index in reversed(range(1, total + 1)):
+        api.add_subscriber(index, f"person{index:04d}@example.com", "Person", [1])
+    item = factory()
+    path = launch(client, item)
+    pages = max(1, (total + 99) // 100)
+    for page in range(1, pages + 1):
+        result = step(client, path)
+        assert result["status"] == ("preview" if page == pages else "loading")
+        assert result["total"] == total
+    with app.app_context():
+        ids = list(db.session.scalars(db.select(TransferItem.subscriber_id).where(TransferItem.job_id == path.rsplit("/", 1)[1])))
+        assert len(ids) == total and set(ids) == set(api.subscribers)
+    preview = client.get(path).text
+    assert f"{total} von {total} Subscribern geladen." in preview
+    assert not re.search(r'<button[^>]*disabled[^>]*>\d+ Empfänger importieren</button>', preview)
+    assert action(client, path, "commit").status_code == 302
+    with app.app_context():
+        recipients = db.session.scalars(db.select(Recipient).where(Recipient.campaign_id == item["campaign_id"])).all()
+        assert len(recipients) == total + 1
+        assert {int(r.source["listmonk_id"]) for r in recipients if "listmonk_id" in r.source} == set(api.subscribers)
+
+
+def test_timestamp_sort_can_repeat_subscribers_across_pages(api):
+    api.unstable_subscriber_ties = True
+    for index in range(100, 199):
+        api.add_subscriber(index, f"person{index}@example.com", "Person", [1])
+    with ListmonkClient(api.url, api.username, api.token) as connection:
+        pages = [connection.page("api/subscribers", list_id=1, page=page, per_page=100,
+                                 order_by="created_at", order="ASC")[0] for page in (1, 2)]
+    assert sum(map(len, pages)) == 101
+    assert len({row["id"] for page in pages for row in page}) == 100
+
+
+@pytest.mark.parametrize("direction", ["import", "export"])
+@pytest.mark.parametrize("broken_page", ["overlap", "empty"])
+def test_incomplete_pagination_stops_before_preview(app, client, factory, api, direction, broken_page):
+    configure(client, api)
+    for index in range(100, 199):
+        api.add_subscriber(index, f"person{index}@example.com", "Person", [1])
+    api.subscriber_pages[(1, 2)] = [api.subscribers[10]] if broken_page == "overlap" else []
+    item = factory()
+    path = launch(client, item, direction)
+    assert step(client, path)["status"] == "loading"
+    result = step(client, path)
+    assert result["status"] == "stopped"
+    assert "Unvollständig geladen: 100 von 101 Subscribern" in result["message"]
+    assert sum(result["counts"].values()) == 100
+    assert "Importvorschau" not in client.get(path).text
+    assert "Exportvorschau" not in client.get(path).text
+    assert action(client, path, "retry").status_code == 400
+    assert action(client, path, "commit").status_code == 302
+    with app.app_context():
+        assert db.session.scalar(db.select(db.func.count()).select_from(Recipient)) == 1
+        assert db.session.get(ListmonkConfig, 1).lease_owner is None
+    assert not any(method == "PATCH" for method, _, _ in api.requests)
+
+
+@pytest.mark.parametrize("direction", ["import", "export"])
+@pytest.mark.parametrize("change", ["add", "remove"])
+def test_changed_subscriber_total_requires_new_transfer(app, client, factory, api, direction, change):
+    configure(client, api)
+    for index in range(100, 199):
+        api.add_subscriber(index, f"person{index}@example.com", "Person", [1])
+    path = launch(client, factory(), direction)
+    assert step(client, path)["status"] == "loading"
+    if change == "add":
+        api.add_subscriber(999, "added@example.com", "Added", [1])
+        expected = 102
+    else:
+        del api.subscribers[198]
+        expected = 100
+    result = step(client, path)
+    assert result["status"] == "stopped"
+    assert f"Subscriber-Anzahl hat sich während des Ladens geändert (101 auf {expected})" in result["message"]
+    assert result["total"] == 101
+    assert result["counts"] == {"staged": 100}
+    with app.app_context():
+        assert db.session.scalar(db.select(db.func.count()).select_from(Recipient)) == 1
+    assert not any(method == "PATCH" for method, _, _ in api.requests)
+
+
+def test_incomplete_preview_disables_import_and_rejects_direct_commit(app, client, factory, api):
+    configure(client, api)
+    path = launch(client, factory())
+    assert step(client, path)["status"] == "preview"
+    with app.app_context():
+        job = db.session.get(TransferJob, path.rsplit("/", 1)[1])
+        job.total = 3
+        db.session.commit()
+    preview = client.get(path).text
+    assert "2 von 3 Subscribern geladen." in preview
+    assert "Unvollständig geladen: 2 von 3 Subscribern" in preview
+    assert re.search(r'<button[^>]*disabled[^>]*>2 Empfänger importieren</button>', preview)
+    assert action(client, path, "commit").status_code == 302
+    with app.app_context():
+        assert db.session.scalar(db.select(db.func.count()).select_from(Recipient)) == 1
+        assert db.session.get(TransferJob, path.rsplit("/", 1)[1]).status == "preview"
+
+
+def test_existing_campaign_recipient_does_not_make_load_incomplete(app, client, factory, api):
+    configure(client, api)
+    item = factory()
+    with app.app_context():
+        recipient = db.session.get(Recipient, item["recipient_id"])
+        recipient.identity = recipient.email = "anna@example.com"
+        db.session.commit()
+    path = launch(client, item)
+    assert step(client, path)["status"] == "preview"
+    preview = client.get(path).text
+    assert "2 von 2 Subscribern geladen." in preview
+    assert "1 Dubletten" in preview and "1 Empfänger importieren" in preview
+    assert action(client, path, "commit").status_code == 302
+    with app.app_context():
+        recipients = db.session.scalars(db.select(Recipient).where(Recipient.campaign_id == item["campaign_id"])).all()
+        assert {recipient.email for recipient in recipients} == {"anna@example.com", "ben@example.com"}
+
+
+def test_export_checks_full_list_before_matching_campaign_recipients(app, client, factory, api):
+    configure(client, api)
+    for index in range(100, 199):
+        api.add_subscriber(index, f"person{index}@example.com", "Person", [1])
+    path = launch(client, export_campaign(app, factory), "export")
+    first = step(client, path)
+    assert first["status"] == "loading" and first["total"] == 101
+    result = step(client, path)
+    assert result["status"] == "ready" and result["total"] == 3
+    assert result["counts"] == {"pending": 2, "skipped": 1}
+    assert action(client, path, "commit").status_code == 302
+    assert step(client, path)["status"] == "done"
+    assert len([method for method, _, _ in api.requests if method == "PATCH"]) == 2
 
 
 @pytest.mark.parametrize("source,attribute,expected", [("uuid", "", "00000000-0000-0000-0000-000000000010"), ("id", "", "10"), ("attribute", "customer.id", "A-10")])

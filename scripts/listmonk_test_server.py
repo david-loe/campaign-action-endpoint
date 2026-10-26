@@ -19,6 +19,8 @@ class ListmonkTestServer:
         self.subscribers = {}
         self.requests = []
         self.fail_pages = set()
+        self.subscriber_pages = {}
+        self.unstable_subscriber_ties = False
         self.patch_failures = {}
         self.patch_entered = threading.Event()
         self.patch_release = None
@@ -83,6 +85,17 @@ class ListmonkTestServer:
                             self.respond(503, {"message": "Remote failure: " + state.token})
                             return
                         rows = [copy.deepcopy(row) for row in state.subscribers.values() if any(entry["id"] == list_id for entry in row["lists"])]
+                        field = query.get("order_by", ["email"])[0]
+                        descending = query.get("order", ["ASC"])[0] == "DESC"
+                        # PostgreSQL can choose a different order among equal
+                        # timestamps for each LIMIT/OFFSET query.
+                        tie_order = -1 if state.unstable_subscriber_ties and page % 2 == 0 else 1
+                        rows.sort(key=lambda row: (row[field], tie_order * row["id"]), reverse=descending)
+                        total = len(rows)
+                        per_page = int(query.get("per_page", [100])[0])
+                        results = state.subscriber_pages.get((list_id, page), rows[(page - 1) * per_page:page * per_page])
+                        self.respond(200, {"data": {"results": results, "total": total}})
+                        return
                     elif parts.path.startswith("/api/subscribers/"):
                         row = state.subscribers.get(int(parts.path.rsplit("/", 1)[1]))
                         self.respond(200 if row else 404, {"data": copy.deepcopy(row)})

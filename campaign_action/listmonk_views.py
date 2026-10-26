@@ -6,7 +6,7 @@ from .crypto import encrypt_value
 from .listmonk import ListmonkError, validate_base_url
 from .models import ListmonkConfig, Recipient, TransferItem, TransferJob, db
 from .services import annotate_import, begin_write
-from .transfers import active_lease, client_for, counts, process_step
+from .transfers import active_lease, client_for, counts, incomplete_load_message, process_step
 from .views import admin_required, campaign_or_404
 
 bp = Blueprint("listmonk", __name__)
@@ -163,14 +163,16 @@ def job_detail(job_id):
     summary = counts(job.id)
     items = db.session.scalars(db.select(TransferItem).where(TransferItem.job_id == job.id).order_by(
         case((TransferItem.status.in_(("invalid", "error")), 0), else_=1), TransferItem.id).limit(100)).all()
-    rows, duplicates = [], 0
+    rows, duplicates, load_error = [], 0, ""
     if job.direction == "import" and job.status == "preview":
+        load_error = incomplete_load_message(sum(summary.values()), job.total)
         payloads = list(db.session.scalars(db.select(TransferItem.payload).where(TransferItem.job_id == job.id, TransferItem.status == "staged").order_by(TransferItem.id)))
         annotated = annotate_import(payloads, job.campaign_id)
         duplicates = sum(row["duplicate"] for row in annotated)
         rows = annotated[:100]
     return render_template("listmonk_job.html", job=job, summary=summary, items=items, rows=rows, duplicates=duplicates,
-                           status_labels=STATUS_LABELS, current=revision_matches(job), autorun=request.args.get("run") == "1")
+                           status_labels=STATUS_LABELS, current=revision_matches(job), autorun=request.args.get("run") == "1",
+                           load_error=load_error)
 
 
 @bp.post("/admin/listmonk/jobs/<job_id>/step")
@@ -199,7 +201,13 @@ def job_commit(job_id):
         job.status = "running"
         db.session.commit()
         return redirect(url_for("listmonk.job_detail", job_id=job.id, run=1))
-    if counts(job.id).get("invalid"):
+    summary = counts(job.id)
+    load_error = incomplete_load_message(sum(summary.values()), job.total)
+    if load_error:
+        db.session.rollback()
+        flash(load_error, "error")
+        return redirect(url_for("listmonk.job_detail", job_id=job_id))
+    if summary.get("invalid"):
         db.session.rollback()
         flash("Der Import enthält fehlerhafte Subscribers und wird nicht übernommen.", "error")
         return redirect(url_for("listmonk.job_detail", job_id=job_id))

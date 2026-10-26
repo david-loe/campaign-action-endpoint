@@ -17,8 +17,10 @@
 {% endif %}
 {% if job.status == 'preview' %}
 <section class="card stack"><h2>Importvorschau</h2><p>{{ summary.get('staged', 0) }} gültige Subscribers · {{ duplicates }} Dubletten · {{ summary.get('invalid', 0) }} Fehler</p>
+<p>{{ summary.values()|sum }} von {{ job.total }} Subscribern geladen.</p>
+{% if load_error %}<div class="notice error" role="alert">{{ load_error }}</div>{% endif %}
 {% if summary.get('invalid') %}<div class="notice error">Fehlerhafte Subscribers verhindern die gesamte Übernahme. Korrigieren Sie die Daten oder die Key-Auswahl und starten Sie einen neuen Import.</div>{% endif %}
-<form method="post" action="{{ url_for('listmonk.job_commit', job_id=job.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary" {% if not current or summary.get('invalid') %}disabled{% endif %}>{{ summary.get('staged', 0) - duplicates }} Empfänger importieren</button></form></section>
+<form method="post" action="{{ url_for('listmonk.job_commit', job_id=job.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary" {% if not current or summary.get('invalid') or load_error %}disabled{% endif %}>{{ summary.get('staged', 0) - duplicates }} Empfänger importieren</button></form></section>
 {% endif %}
 {% if job.status == 'ready' %}
 <section class="card stack"><h2>Exportvorschau</h2><p>{{ summary.get('pending', 0) }} vorhandene Subscribers aktualisieren · {{ summary.get('skipped', 0) }} Empfänger überspringen</p><p class="help">Vor jedem Update werden die aktuellen Attribute und die Listenmitgliedschaft erneut geprüft.</p><form method="post" action="{{ url_for('listmonk.job_commit', job_id=job.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary" {% if not current %}disabled{% endif %}>{{ summary.get('pending', 0) }} Links übertragen</button></form></section>

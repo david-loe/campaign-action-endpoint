@@ -99,7 +99,9 @@ class ListmonkClient:
 
     def subscribers(self, list_id, page):
         self.active_list(list_id)
-        rows, total = self.page("api/subscribers", list_id=list_id, page=page, per_page=PAGE_SIZE, order_by="created_at", order="ASC")
+        # Bulk imports can share created_at. Unique e-mail addresses keep page
+        # boundaries stable instead of returning the same IDs on several pages.
+        rows, total = self.page("api/subscribers", list_id=list_id, page=page, per_page=PAGE_SIZE, order_by="email", order="ASC")
         if total > MAX_SUBSCRIBERS or len(rows) > PAGE_SIZE:
             raise ListmonkError("Es sind höchstens 100.000 Subscribers je Transfer erlaubt.")
         if any(not isinstance(row.get("id"), int) or isinstance(row["id"], bool) or row["id"] <= 0 for row in rows):

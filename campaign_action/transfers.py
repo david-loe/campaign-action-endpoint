@@ -10,6 +10,16 @@ from .models import ListmonkConfig, Recipient, TransferItem, TransferJob, db, ut
 from .services import begin_write, confirmation_link, normalized_email
 
 
+class ListmonkPaginationError(ListmonkError):
+    """An inconsistent result set requires a fresh transfer, not a page retry."""
+
+
+def incomplete_load_message(loaded, total):
+    if loaded != total:
+        return f"Unvollständig geladen: {loaded} von {total} Subscribern. Bitte starten Sie einen neuen Vorgang."
+    return ""
+
+
 def active_lease(config):
     return bool(config and config.lease_owner and config.lease_until and config.lease_until.replace(tzinfo=timezone.utc) > utcnow())
 
@@ -73,6 +83,9 @@ def owned_job(snapshot):
 
 
 def finish_loading(job):
+    error = incomplete_load_message(sum(counts(job.id).values()), job.total)
+    if error:
+        raise ListmonkPaginationError(error)
     if job.direction == "import":
         job.status = "preview"
         return
@@ -122,6 +135,10 @@ def load_page(snapshot, client):
             normalized.append((subscriber["id"], {"email": email, "uuid": subscriber.get("uuid")}, ""))
     begin_write()
     job, _ = owned_job(snapshot)
+    if snapshot["page"] > 1 and total != job.total:
+        raise ListmonkPaginationError(
+            f"Die Subscriber-Anzahl hat sich während des Ladens geändert ({job.total} auf {total}). "
+            "Bitte starten Sie einen neuen Vorgang.")
     existing = set(db.session.scalars(db.select(TransferItem.subscriber_id).where(TransferItem.job_id == job.id)))
     for subscriber_id, payload, error in normalized:
         if subscriber_id not in existing:
@@ -188,6 +205,12 @@ def process_step(job_id):
                 load_page(snapshot, client)
             else:
                 export_tasks(snapshot, client)
+    except ListmonkPaginationError as error:
+        # Pagination checks run inside the owned loading transaction, before
+        # export reconciliation. Keep the loaded rows and their count visible.
+        job, _ = owned_job(snapshot)
+        job.status, job.error = "stopped", str(error)
+        db.session.commit()
     except ListmonkError as error:
         db.session.rollback()
         begin_write()
